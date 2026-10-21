@@ -1,0 +1,7 @@
+# Native Windows install for the read-only MetaTrader 5 bridge (BROKER_PROVIDER=mt5).
+# The MetaTrader5 package only exists for Windows, so this runs outside Docker.
+-e ../libs/algotrader_logger
+fastapi>=0.128.0
+uvicorn>=0.40.0
+redis>=7.1.0
+MetaTrader5>=5.0.45

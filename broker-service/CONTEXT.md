@@ -1,6 +1,8 @@
 # Broker Service Context
 
-Adapts cTrader commands and market data to REST and Redis. Shared timestamps,
+Adapts cTrader commands and market data to REST and Redis. With
+`BROKER_PROVIDER=mt5` it instead adapts a local MetaTrader 5 terminal, read-only and
+natively on Windows; see [MT5.md](MT5.md) and `app/infrastructure/mt5_client.py`. Shared timestamps,
 Candle/Tick fields, and stream names are in [root context](../CONTEXT.md).
 
 ## Seams and Gotchas

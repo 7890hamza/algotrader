@@ -3,7 +3,8 @@ from __future__ import annotations
 from contextlib import asynccontextmanager
 
 from algotrader_logger import RequestLoggingMiddleware
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
+from fastapi.responses import JSONResponse
 
 from app.api.routers import (
     accounts,
@@ -15,6 +16,7 @@ from app.api.routers import (
 )
 from app.infrastructure.config import ServiceContainer
 from app.infrastructure.logging import configure_logging
+from app.infrastructure.mt5_client import TradingDisabledError
 from app.settings import Settings
 
 
@@ -40,6 +42,10 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.include_router(positions.router)
     app.include_router(deals.router)
     app.include_router(market_data.router)
+
+    @app.exception_handler(TradingDisabledError)
+    async def trading_disabled(_request: Request, exc: TradingDisabledError) -> JSONResponse:
+        return JSONResponse(status_code=403, content={"detail": str(exc)})
 
     @app.get("/health")
     async def health():
