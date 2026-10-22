@@ -38,6 +38,7 @@ import {
   ProtectiveLinesPrimitive,
   type ChartProtectiveLineSegment,
 } from './protectiveLinesPrimitive';
+import { createChartTimeFormatters, DEFAULT_CHART_TIME_ZONE } from './chartTimeZone';
 import type { ChartMeasurementOverlayModel } from './measurementOverlay';
 import {
   clearMeasurementOverlayPrimitive,
@@ -156,6 +157,7 @@ export class ChartManager {
   private crosshairMoveHandler: ChartCrosshairMoveHandler | null = null;
   private visibleLogicalRangeHandler: ChartVisibleRangeHandler | null = null;
   private pressedMouseMoveRestoreOptions: ChartOptions['handleScroll'] | null = null;
+  private displayTimeZone = DEFAULT_CHART_TIME_ZONE;
 
   constructor(options: DeepPartial<ChartOptions> = {}) {
     this.defaultOptions = {
@@ -184,12 +186,33 @@ export class ChartManager {
     };
   }
 
+  /** Labels the time axis and crosshair in an IANA time zone; data stays UTC. */
+  setDisplayTimeZone(timeZone: string): boolean {
+    this.displayTimeZone = timeZone;
+    return this.applyDisplayTimeZone();
+  }
+
+  getDisplayTimeZone(): string {
+    return this.displayTimeZone;
+  }
+
+  private applyDisplayTimeZone(): boolean {
+    if (!this.chart) return false;
+    const { timeFormatter, tickMarkFormatter } = createChartTimeFormatters(this.displayTimeZone);
+    this.chart.applyOptions({
+      localization: { timeFormatter },
+      timeScale: { tickMarkFormatter },
+    });
+    return true;
+  }
+
   init(containerElement: HTMLElement): boolean {
     this.container = containerElement;
 
     try {
       this.chart = createChart(containerElement, this.defaultOptions);
       this.chart.timeScale().applyOptions(this.timeScaleOptions);
+      this.applyDisplayTimeZone();
       return true;
     } catch (error) {
       console.error('Failed to initialize chart:', error);

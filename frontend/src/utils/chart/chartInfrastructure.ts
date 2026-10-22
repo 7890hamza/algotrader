@@ -29,6 +29,7 @@ export interface ChartInfrastructure {
   ): ManagedSeriesApi | null;
   updateCandlestick(candle: ChartOhlcPoint): boolean;
   setMinMove(minMove: number): boolean;
+  setDisplayTimeZone(timeZone: string): boolean;
   setCandlestickMarkers(markers: readonly ChartSeriesMarker[]): boolean;
   setCandlestickProtectiveLines(segments: readonly ChartProtectiveLineSegment[]): boolean;
   setCandlestickMeasurementOverlay(model: ChartMeasurementOverlayModel): boolean;
@@ -94,6 +95,10 @@ class DefaultChartInfrastructure implements ChartInfrastructure {
 
   updateCandlestick(candle: ChartOhlcPoint): boolean {
     return this.chartManager.updateCandle('ohlc', candle);
+  }
+
+  setDisplayTimeZone(timeZone: string): boolean {
+    return this.chartManager.setDisplayTimeZone(timeZone);
   }
 
   setMinMove(minMove: number): boolean {

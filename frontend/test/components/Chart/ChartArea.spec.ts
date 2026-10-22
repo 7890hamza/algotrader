@@ -79,6 +79,7 @@ const chartAreaMocks = vi.hoisted(() => {
     addCandlestickData: vi.fn(() => ohlcSeries),
     updateCandlestick: vi.fn(() => true),
     setMinMove: vi.fn(() => true),
+    setDisplayTimeZone: vi.fn(() => true),
     setCandlestickMarkers: vi.fn((_markers: readonly unknown[]) => true),
     setCandlestickProtectiveLines: vi.fn((_segments: readonly unknown[]) => true),
     setCandlestickMeasurementOverlay: vi.fn((_model: unknown) => true),

@@ -106,6 +106,7 @@ import {
 } from "@/utils/chart/backtestOverlay";
 import { getOrCreatePaneOverlayWrapper } from "@/utils/chart/paneOverlay";
 import { timeframeToMinutes } from "@/utils/timeframes";
+import { displayTimeZoneForTimeframe } from "@/utils/chart/chartTimeZone";
 import Indicator from "@/components/Chart/Indicator/Indicator.vue";
 import { CloseCircleOutline } from "@/icons";
 
@@ -288,6 +289,7 @@ export default defineComponent({
         this.shouldScrollToRealTime = true;
 
         if (newTimeframe !== oldTimeframe) {
+          this.applyDisplayTimeZone();
           this.syncChartSession();
         }
       },
@@ -450,8 +452,15 @@ export default defineComponent({
       };
     },
 
+    applyDisplayTimeZone(): void {
+      this.chartInfrastructure.setDisplayTimeZone(
+        displayTimeZoneForTimeframe(this.currentTimeframeStore.value),
+      );
+    },
+
     initializeChartComponent(): void {
       this.chartInfrastructure.init(this.getChartContainer());
+      this.applyDisplayTimeZone();
       void this.syncBacktestOverlayTarget();
       this.subscribeCrosshairMove(this.onCrosshairMove);
       this.subscribeVisibleLogicalRangeChange(this.onVisibleLogicalRangeChange);
