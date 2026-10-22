@@ -1,1 +1,4 @@
+# Windows scripts need CRLF; anything that runs inside Linux containers needs LF,
+# even when the repository is checked out on Windows with core.autocrlf=true.
 *.bat text eol=crlf
+*.sh text eol=lf
