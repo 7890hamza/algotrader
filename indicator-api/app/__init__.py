@@ -12,6 +12,7 @@ INDICATOR_MAP: dict[int, str] = {
     4: "macd",
     5: "currency_strength",
     6: "session_sdev",
+    7: "cme_open_sdev",
 }
 
 

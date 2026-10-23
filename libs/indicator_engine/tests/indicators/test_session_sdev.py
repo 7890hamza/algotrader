@@ -6,8 +6,11 @@ from indicator_engine import get_batch_engine, get_registry
 from indicator_engine.core.bars import BarTensor
 from indicator_engine.core.params import ParamGrid
 from indicator_engine.indicators.session_sdev import (
+    MULTIPLIERS,
     OUTPUTS,
+    CmeOpenSDEV,
     SessionSDEV,
+    parse_levels,
     session_levels,
     to_epoch_ms,
 )
@@ -134,3 +137,71 @@ class SessionSdevTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class SessionOptionsTests(unittest.TestCase):
+    def setUp(self) -> None:
+        self.days = weekdays(datetime(2026, 9, 1), 22)
+        self.sessions = [(d, 7000.0 + i, 7000.0 + i + (i % 3 - 1)) for i, d in enumerate(self.days)]
+
+    def _with_overnight_bars(self):
+        """Session bars plus one bar at 12:00 Pacific on every day."""
+        times, opens, closes = build_sessions(self.sessions)
+        extra = np.array(
+            [_ms(datetime(d.year, d.month, d.day, 12, 0, tzinfo=PACIFIC)) for d in self.days]
+        )
+        order = np.argsort(np.concatenate([times, extra]))
+        all_times = np.concatenate([times, extra])[order]
+        all_opens = np.concatenate([opens, np.full(extra.size, 1.0)])[order]
+        all_closes = np.concatenate([closes, np.full(extra.size, 1.0)])[order]
+        return all_times, all_opens, all_closes
+
+    def test_session_extend_stops_at_session_end(self) -> None:
+        times, opens, closes = self._with_overnight_bars()
+        noon = _ms(datetime(2026, 9, 30, 12, 0, tzinfo=PACIFIC))
+        noon_idx = int(np.searchsorted(times, noon))
+        inside = session_levels(times, opens, closes, extend="session")
+        carried = session_levels(times, opens, closes, extend="next_session")
+        self.assertTrue(np.isnan(inside[noon_idx]).all())
+        self.assertFalse(np.isnan(carried[noon_idx, 0]))
+
+    def test_only_selected_levels_are_drawn(self) -> None:
+        times, opens, closes = build_sessions(self.sessions)
+        levels = session_levels(times, opens, closes, levels=(0.5, 1.0))
+        row = levels[21 * 240]
+        self.assertFalse(np.isnan(row[OUTPUTS.index("+0.5")]))
+        self.assertFalse(np.isnan(row[OUTPUTS.index("-1")]))
+        self.assertTrue(np.isnan(row[OUTPUTS.index("+0.25")]))
+        self.assertTrue(np.isnan(row[OUTPUTS.index("+2")]))
+
+    def test_parse_levels(self) -> None:
+        self.assertEqual(parse_levels("0.25, 0.5,1"), (0.25, 0.5, 1.0))
+        self.assertEqual(parse_levels("all"), MULTIPLIERS)
+        with self.assertRaises(ValueError):
+            parse_levels("0.3")
+
+    def test_cme_sessions_run_sunday_to_thursday(self) -> None:
+        start, sessions, day = datetime(2026, 9, 6), [], datetime(2026, 9, 6)
+        while len(sessions) < 22:
+            if day.weekday() in (6, 0, 1, 2, 3):
+                sessions.append((day, 7000.0 + len(sessions), 7001.0 + len(sessions) % 2))
+            day += timedelta(days=1)
+        self.assertEqual(sessions[0][0], start)  # first session is a Sunday
+        times, opens, closes = build_sessions(sessions, start=(15, 0))
+        levels = session_levels(
+            times, opens, closes, session_start="15:00", session_end="19:00", session_days="Sun-Thu"
+        )
+        self.assertFalse(np.isnan(levels[20 * 240, 0]))
+        weekday_only = session_levels(
+            times, opens, closes, session_start="15:00", session_end="19:00", session_days="Mon-Fri"
+        )
+        self.assertTrue(np.isnan(weekday_only[20 * 240, 0]))  # Sundays dropped, too few
+
+    def test_cme_indicator_defaults(self) -> None:
+        spec = CmeOpenSDEV().spec
+        self.assertEqual(spec.id, "cme_open_sdev")
+        self.assertEqual(spec.parameters["session_start"]["default"], "15:00")
+        self.assertEqual(spec.parameters["session_end"]["default"], "19:00")
+        self.assertEqual(spec.parameters["session_days"]["default"], "Sun-Thu")
+        self.assertTrue(spec.sparse_outputs)
+        self.assertIn("cme_open_sdev", get_registry().list_specs())

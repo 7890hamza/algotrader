@@ -1,25 +1,35 @@
 from __future__ import annotations
 
-SDEV_UP_COLOR = "#26A69A"
-SDEV_DOWN_COLOR = "#EF5350"
-SDEV_OPEN_COLOR = "#E8B04F"
+SDEV_LEVEL_COLOR = "#4B9A82"
+SDEV_OPEN_COLOR = "#C8962E"
+SDEV_LABEL_COLOR = "#E6E6E6"
 SDEV_MULTIPLIERS = (0.25, 0.5, 0.75, 1.0, 1.25, 1.5, 1.75, 2.0, 2.5, 3.0)
+DOTTED = 1
 
 
-def _session_sdev_metadata() -> dict:
-    """Whole SDEVs solid and thick, halves solid, quarters dashed."""
+def _session_sdev_metadata(open_label: str, label_prefix: str = "") -> dict:
+    """Session levels drawn as labeled horizontal segments (output type "level").
+
+    Clean style: thin dotted lines in one muted color, short white labels at the
+    right end of each line, and a dotted gold open line.
+    """
+    prefix = f"{label_prefix} " if label_prefix else ""
     outputs: dict[str, dict] = {
-        "open": {"type": "line", "plotOptions": {"lineWidth": 2, "color": SDEV_OPEN_COLOR}},
+        "open": {
+            "type": "level",
+            "label": open_label,
+            "labelColor": SDEV_LABEL_COLOR,
+            "plotOptions": {"lineWidth": 1, "lineStyle": DOTTED, "color": SDEV_OPEN_COLOR},
+        },
     }
     for m in SDEV_MULTIPLIERS:
-        if float(m).is_integer():
-            style = {"lineWidth": 2, "lineStyle": 0}
-        elif (m * 2).is_integer():
-            style = {"lineWidth": 1, "lineStyle": 0}
-        else:
-            style = {"lineWidth": 1, "lineStyle": 2}
-        outputs[f"+{m:g}"] = {"type": "line", "plotOptions": {**style, "color": SDEV_UP_COLOR}}
-        outputs[f"-{m:g}"] = {"type": "line", "plotOptions": {**style, "color": SDEV_DOWN_COLOR}}
+        for sign in ("+", "-"):
+            outputs[f"{sign}{m:g}"] = {
+                "type": "level",
+                "label": f"{prefix}{sign}{m:g}",
+                "labelColor": SDEV_LABEL_COLOR,
+                "plotOptions": {"lineWidth": 1, "lineStyle": DOTTED, "color": SDEV_LEVEL_COLOR},
+            }
     return {"overlay": True, "outputs": outputs}
 
 
@@ -100,5 +110,6 @@ UI_METADATA: dict[str, dict] = {
             "USD": {"type": "line", "plotOptions": {"lineWidth": 2, "color": "#FF9800"}},
         },
     },
-    "session_sdev": _session_sdev_metadata(),
+    "session_sdev": _session_sdev_metadata("NY Open"),
+    "cme_open_sdev": _session_sdev_metadata("CME Open"),
 }

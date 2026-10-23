@@ -1,6 +1,14 @@
 import { useIndicatorsStore } from '@/stores/indicatorsStore';
 import type { IndicatorDataPoint, JsonObject } from '@/types/contracts';
 
+import {
+  buildSessionLevelSegments,
+  clockMinutes,
+  hasLevelOutputs,
+  isLevelOutput,
+  type SessionLevelSegment,
+  upsertIndicatorPoint,
+} from './sessionLevels';
 import type {
   ChartSeriesInfo,
   ChartSeriesOptions,
@@ -23,7 +31,17 @@ export interface IndicatorChartManager {
   setSeriesData(key: string, data: readonly ChartValuePoint[]): boolean;
   removeSeries(key: string): boolean;
   getPaneHtmlElement(paneIndex?: number): Promise<HTMLElement | null>;
+  setSessionLevels?(
+    id: string,
+    seriesKey: string,
+    segments: readonly SessionLevelSegment[],
+    precision?: number,
+  ): boolean;
+  clearSessionLevels?(id: string): boolean;
 }
+
+/** Key of the main candlestick series that session levels are drawn on. */
+const PRICE_SERIES_KEY = 'ohlc';
 
 type IndicatorsStore = ReturnType<typeof useIndicatorsStore>;
 
@@ -47,6 +65,9 @@ function toChartSeriesOptions(options: JsonObject | undefined): ChartSeriesOptio
 export class IndicatorManager {
   public readonly indicatorsStore: IndicatorsStore;
   private readonly chartManager: IndicatorChartManager;
+  /** Points (historical + live) and style overrides for level indicators. */
+  private readonly levelPoints = new Map<string, IndicatorDataPoint[]>();
+  private readonly levelStyles = new Map<string, Record<string, JsonObject>>();
 
   constructor(chartManager: IndicatorChartManager) {
     this.indicatorsStore = useIndicatorsStore();
@@ -94,6 +115,35 @@ export class IndicatorManager {
         );
       }
     }
+
+    if (hasLevelOutputs(info.outputs)) {
+      this.levelPoints.set(id, [...data]);
+      this.renderLevels(id);
+    }
+  }
+
+  /** Session window length from the indicator's session_start/session_end. */
+  private sessionSeconds(parameters: Record<string, { value?: unknown; default?: unknown }>): number | null {
+    const valueOf = (key: string): unknown => parameters[key]?.value ?? parameters[key]?.default;
+    if (valueOf('extend') === 'next_session') return null;
+    const start = clockMinutes(valueOf('session_start'));
+    const end = clockMinutes(valueOf('session_end'));
+    return start !== null && end !== null && end > start ? (end - start) * 60 : null;
+  }
+
+  private renderLevels(id: string): void {
+    const indicator = this.indicatorsStore.getById(id);
+    const points = this.levelPoints.get(id);
+    if (!indicator || !points || !this.chartManager.setSessionLevels) {
+      return;
+    }
+    const segments = buildSessionLevelSegments(
+      points,
+      indicator.info.outputs,
+      this.levelStyles.get(id) ?? {},
+      { sessionSeconds: this.sessionSeconds(indicator.parameters) },
+    );
+    this.chartManager.setSessionLevels(id, PRICE_SERIES_KEY, segments);
   }
 
   transformIndicatorData(data: readonly IndicatorDataPoint[], outputKey: string): ChartValuePoint[] {
@@ -114,6 +164,14 @@ export class IndicatorManager {
   }
 
   updateIndicatorStyles(id: string, outputKey: string, newStyles: ChartSeriesOptions): boolean {
+    const indicator = this.indicatorsStore.getById(id);
+    if (indicator && isLevelOutput(indicator.info.outputs[outputKey])) {
+      const styles = this.levelStyles.get(id) ?? {};
+      styles[outputKey] = { ...(styles[outputKey] ?? {}), ...(newStyles as JsonObject) };
+      this.levelStyles.set(id, styles);
+      this.renderLevels(id);
+      return true;
+    }
     const seriesKey = `${id}_${outputKey}`;
     return this.chartManager.updateSeriesOptions(seriesKey, newStyles);
   }
@@ -129,6 +187,11 @@ export class IndicatorManager {
     if (!indicator) return;
 
     const { info, data } = indicator;
+
+    if (hasLevelOutputs(info.outputs)) {
+      this.levelPoints.set(id, [...data]);
+      this.renderLevels(id);
+    }
 
     for (const outputKey of Object.keys(info.outputs)) {
       if (outputKey === 'timestamp') continue;
@@ -154,6 +217,12 @@ export class IndicatorManager {
       return;
     }
 
+    if (hasLevelOutputs(indicator.info.outputs)) {
+      const points = this.levelPoints.get(id) ?? [...indicator.data];
+      this.levelPoints.set(id, upsertIndicatorPoint(points, point));
+      this.renderLevels(id);
+    }
+
     for (const outputKey of Object.keys(indicator.info.outputs)) {
       if (outputKey === 'timestamp') {
         continue;
@@ -170,6 +239,10 @@ export class IndicatorManager {
   }
 
   removeIndicatorSeries(id: string): void {
+    this.chartManager.clearSessionLevels?.(id);
+    this.levelPoints.delete(id);
+    this.levelStyles.delete(id);
+
     const indicator = this.indicatorsStore.getById(id);
     if (!indicator) return;
 

@@ -110,6 +110,10 @@ def format_indicator_response(
     indicator_reset = indicator_reset.drop(columns=["timestamp"])
     indicator_reset = indicator_reset.dropna(subset=["timestamp_ms"])
     indicator_reset["timestamp_ms"] = indicator_reset["timestamp_ms"].astype("int64")
+    # Missing values become JSON null (NaN is not valid JSON).
+    value_columns = [c for c in indicator_reset.columns if c != "timestamp_ms"]
+    values = indicator_reset[value_columns].astype(object)
+    indicator_reset[value_columns] = values.where(values.notna(), None)
 
     response_data = {
         "data": {

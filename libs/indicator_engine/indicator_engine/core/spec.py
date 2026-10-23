@@ -29,6 +29,9 @@ class IndicatorSpec:
     # until it has enough), so live updates run as soon as any bars exist. The
     # warmup still sizes history fetches and live buffers.
     requires_full_warmup: bool = True
+    # True: outputs are often NaN on purpose (for example levels drawn only during
+    # a session), so a row is kept when any output has a value.
+    sparse_outputs: bool = False
 
     def warmup(self, params: Dict[str, Any]) -> int:
         if self.warmup_fn is None:

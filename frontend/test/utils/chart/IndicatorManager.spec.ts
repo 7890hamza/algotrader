@@ -140,3 +140,66 @@ describe('IndicatorManager', () => {
     expect(store.exists(indicatorId)).toBe(false);
   });
 });
+
+describe('IndicatorManager session levels', () => {
+  const levelInfo: IndicatorInfo = {
+    id: 6,
+    indicator_id: 'session_sdev',
+    name: 'Net Change SDEV',
+    overlay: true,
+    inputs: [],
+    outputs: {
+      open: { type: 'level', label: 'Open', plotOptions: { color: '#E8B04F', lineWidth: 2 } },
+      '+1': { type: 'level', label: '+1', touch: 'high', plotOptions: { color: '#26A69A' } },
+    },
+    parameters: {},
+  };
+
+  beforeEach(() => {
+    setActivePinia(createPinia());
+  });
+
+  it('draws level outputs as session levels instead of line series', async () => {
+    const chartManager = {
+      ...createChartManager(),
+      setSessionLevels: vi.fn(() => true),
+      clearSessionLevels: vi.fn(() => true),
+    };
+    const manager = new IndicatorManager(chartManager);
+    const id = manager.indicatorsStore.addIndicator(levelInfo, [
+      { timestamp_ms: 60_000, open: 100, '+1': 101 },
+      { timestamp_ms: 120_000, open: 100, '+1': 101 },
+    ], 0);
+
+    await manager.addIndicatorSeries(id);
+
+    expect(chartManager.addSeries).not.toHaveBeenCalled();
+    const [ownerId, seriesKey, segments] = chartManager.setSessionLevels.mock.calls[0] as unknown as [
+      string,
+      string,
+      { label: string; endTime: number }[],
+    ];
+    expect(ownerId).toBe(id);
+    expect(seriesKey).toBe('ohlc');
+    expect(segments.map((s) => s.label).sort()).toEqual(['+1', 'Open']);
+
+    manager.updateIndicatorSeriesPoint(id, { timestamp_ms: 180_000, open: 100, '+1': 101 });
+    const lastCall = chartManager.setSessionLevels.mock.calls.at(-1) as unknown as [
+      string,
+      string,
+      { endTime: number }[],
+    ];
+    expect(lastCall[2][0].endTime).toBe(180);
+
+    manager.updateIndicatorStyles(id, 'open', { color: '#ffffff' });
+    const styled = chartManager.setSessionLevels.mock.calls.at(-1) as unknown as [
+      string,
+      string,
+      { label: string; color: string }[],
+    ];
+    expect(styled[2].find((s) => s.label === 'Open')?.color).toBe('#ffffff');
+
+    manager.removeIndicatorSeries(id);
+    expect(chartManager.clearSessionLevels).toHaveBeenCalledWith(id);
+  });
+});

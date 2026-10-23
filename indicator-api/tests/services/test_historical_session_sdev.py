@@ -37,6 +37,7 @@ def sessions(count: int) -> tuple[pd.DataFrame, list[float]]:
 class HistoricalSessionSdevTests(unittest.IsolatedAsyncioTestCase):
     def test_listed_as_available(self) -> None:
         self.assertIn({"id": 6, "name": "Net Change SDEV"}, get_available_indicators())
+        self.assertIn({"id": 7, "name": "CME Open SDEV"}, get_available_indicators())
 
     async def test_levels_are_returned_for_sessions_with_enough_history(self) -> None:
         candles, changes = sessions(22)
@@ -58,13 +59,17 @@ class HistoricalSessionSdevTests(unittest.IsolatedAsyncioTestCase):
         info = response["data"]["indicator_info"]
         rows = response["data"]["indicator_data"]
         self.assertTrue(info["overlay"])
-        self.assertEqual(info["outputs"]["+1"]["plotOptions"]["lineWidth"], 2)
-        self.assertEqual(info["outputs"]["+0.25"]["plotOptions"]["lineStyle"], 2)
+        self.assertEqual(info["outputs"]["+1"]["type"], "level")
+        self.assertEqual(info["outputs"]["+1"]["plotOptions"]["lineStyle"], 1)
+        self.assertEqual(info["outputs"]["-0.5"]["label"], "-0.5")
+        self.assertEqual(info["outputs"]["open"]["label"], "NY Open")
         self.assertEqual(len(rows), 2 * 240)  # sessions 21 and 22 have 20 complete before them
+        self.assertIsNone(rows[-1]["+0.25"])  # not in the default levels
         sigma = float(np.std(changes[1:21], ddof=0))
         last = rows[-1]
         self.assertAlmostEqual(last["open"], 7021.0)
         self.assertAlmostEqual(last["-1"], 7021.0 * (1 - sigma / 100), places=6)
+        self.assertIsNone(last["+2"])  # not in the default levels: JSON null, not NaN
 
 
 if __name__ == "__main__":

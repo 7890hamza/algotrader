@@ -45,6 +45,8 @@ import {
   setMeasurementOverlayPrimitive,
 } from './measurementOverlayLifecycle';
 import type { MeasurementOverlayPrimitive } from './measurementOverlayPrimitive';
+import type { SessionLevelSegment } from './sessionLevels';
+import { SessionLevelsPrimitive } from './sessionLevelsPrimitive';
 
 export type ChartSeriesType =
   | 'line'
@@ -151,6 +153,10 @@ export class ChartManager {
 
   private readonly markerPlugins = new Map<string, ISeriesMarkersPluginApi<Time>>();
   private readonly protectiveLinePrimitives = new Map<string, ProtectiveLinesPrimitive>();
+  private readonly sessionLevelPrimitives = new Map<
+    string,
+    { seriesKey: string; series: ManagedSeriesApi; primitive: SessionLevelsPrimitive }
+  >();
   private readonly measurementOverlayPrimitives = new Map<string, MeasurementOverlayPrimitive>();
   private readonly defaultOptions: DeepPartial<ChartOptions>;
   private readonly timeScaleOptions: DeepPartial<HorzScaleOptions>;
@@ -385,6 +391,7 @@ export class ChartManager {
       this.clearSeriesMarkers(key);
       this.clearSeriesProtectiveLines(key);
       this.clearSeriesMeasurementOverlay(key);
+      this.clearSessionLevelsOnSeries(key);
       this.chart.removeSeries(seriesInfo.series);
       this.series.delete(key);
       return true;
@@ -463,6 +470,65 @@ export class ChartManager {
     } catch (error) {
       console.error(`Failed to set protective lines for series '${key}':`, error);
       return false;
+    }
+  }
+
+  /**
+   * Draws labeled session levels (for example SDEV levels) on top of a series.
+   * `id` identifies the owner, usually an indicator instance.
+   */
+  setSessionLevels(
+    id: string,
+    seriesKey: string,
+    segments: readonly SessionLevelSegment[],
+    precision?: number,
+  ): boolean {
+    const seriesInfo = this.series.get(seriesKey);
+    if (!seriesInfo) {
+      return false;
+    }
+
+    try {
+      const existing = this.sessionLevelPrimitives.get(id);
+      if (existing && existing.series === seriesInfo.series) {
+        if (precision !== undefined) existing.primitive.setPrecision(precision);
+        existing.primitive.setSegments(segments);
+        return true;
+      }
+      if (existing) {
+        this.clearSessionLevels(id);
+      }
+      const primitive = new SessionLevelsPrimitive(segments);
+      if (precision !== undefined) primitive.setPrecision(precision);
+      seriesInfo.series.attachPrimitive(primitive);
+      this.sessionLevelPrimitives.set(id, { seriesKey, series: seriesInfo.series, primitive });
+      return true;
+    } catch (error) {
+      console.error(`Failed to set session levels '${id}':`, error);
+      return false;
+    }
+  }
+
+  clearSessionLevels(id: string): boolean {
+    const entry = this.sessionLevelPrimitives.get(id);
+    if (!entry) {
+      return false;
+    }
+    this.sessionLevelPrimitives.delete(id);
+    try {
+      entry.series.detachPrimitive(entry.primitive);
+      return true;
+    } catch (error) {
+      console.error(`Failed to clear session levels '${id}':`, error);
+      return false;
+    }
+  }
+
+  private clearSessionLevelsOnSeries(seriesKey: string): void {
+    for (const [id, entry] of Array.from(this.sessionLevelPrimitives.entries())) {
+      if (entry.seriesKey === seriesKey) {
+        this.clearSessionLevels(id);
+      }
     }
   }
 
@@ -705,6 +771,10 @@ export class ChartManager {
 
     for (const key of Array.from(this.measurementOverlayPrimitives.keys())) {
       this.clearSeriesMeasurementOverlay(key);
+    }
+
+    for (const id of Array.from(this.sessionLevelPrimitives.keys())) {
+      this.clearSessionLevels(id);
     }
 
     this.series.clear();

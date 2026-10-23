@@ -19,8 +19,9 @@ For bars longer than 5 minutes the open/close windows widen to one bar.
 from __future__ import annotations
 
 import math
+from dataclasses import replace
 from datetime import datetime, timezone
-from typing import Dict
+from typing import Dict, Sequence
 
 import numpy as np
 from zoneinfo import ZoneInfo
@@ -39,6 +40,9 @@ MS_PER_DAY = 86_400_000
 MINUTES_PER_DAY = 1440
 EDGE_MINUTES = 5
 COVERAGE = 200 / 240
+# Session start days (Monday == 0). CME's Globex day opens Sunday-Thursday afternoons.
+SESSION_DAYS: dict[str, set[int]] = {"Mon-Fri": {0, 1, 2, 3, 4}, "Sun-Thu": {6, 0, 1, 2, 3}}
+DEFAULT_LEVELS = "0.5, 1, 1.5"
 
 
 def _parse_clock(value: str) -> int:
@@ -92,6 +96,9 @@ def session_levels(
     session_start: str = "05:00",
     session_end: str = "09:00",
     time_zone: str = "America/Los_Angeles",
+    session_days: str = "Mon-Fri",
+    extend: str = "session",
+    levels: Sequence[float] = MULTIPLIERS,
 ) -> np.ndarray:
     """Return an array (time, len(OUTPUTS)) of open and +/- SDEV levels per bar."""
     n = len(epoch_ms)
@@ -114,7 +121,10 @@ def session_levels(
     min_bars = math.ceil((end_m - start_m) * COVERAGE / bar_minutes)
 
     valid = np.isfinite(open_) & np.isfinite(close)
-    in_window = valid & (weekday < 5) & (minute >= start_m) & (minute < end_m)
+    allowed_days = np.array(sorted(SESSION_DAYS[session_days]), dtype=np.int64)
+    in_window = (
+        valid & np.isin(weekday, allowed_days) & (minute >= start_m) & (minute < end_m)
+    )
     open_mask = in_window & (minute < start_m + edge)
     close_mask = in_window & (minute >= end_m - edge)
 
@@ -146,9 +156,16 @@ def session_levels(
         if before.size >= lookback:
             sigma[k] = float(np.std(net_pct[before[-lookback:]], ddof=0))
 
-    # Each bar takes the levels of the latest session that opened at or before it.
+    # Each bar takes the levels of the latest session that opened at or before it,
+    # either only inside that session's window or until the next session opens.
     session_of_bar = np.searchsorted(open_idx, np.arange(n), side="right") - 1
     has_session = session_of_bar >= 0
+    if extend == "session":
+        same_day = np.zeros(n, dtype=bool)
+        same_day[has_session] = day[has_session] == days[session_of_bar[has_session]]
+        has_session &= same_day & (minute >= start_m) & (minute < end_m)
+    elif extend != "next_session":
+        raise ValueError("extend must be 'session' or 'next_session'")
     rows = np.flatnonzero(has_session)
     k_for_rows = session_of_bar[rows]
     sig = sigma[k_for_rows]
@@ -157,16 +174,50 @@ def session_levels(
     rows, sig, base = rows[drawable], sig[drawable], base[drawable]
 
     out[rows, 0] = base
+    shown = {round(float(m), 6) for m in levels}
     col = 1
     for m in MULTIPLIERS:
-        out[rows, col] = base * (1 + m * sig / 100)
-        out[rows, col + 1] = base * (1 - m * sig / 100)
+        if round(m, 6) in shown:
+            out[rows, col] = base * (1 + m * sig / 100)
+            out[rows, col + 1] = base * (1 - m * sig / 100)
         col += 2
     return out
 
 
+def parse_levels(raw: str | Sequence[float]) -> tuple[float, ...]:
+    """Parse "0.25, 0.5, 1" (or "all") into SDEV multipliers this indicator draws."""
+    if isinstance(raw, str):
+        text = raw.strip().lower()
+        if text in {"", "all"}:
+            return MULTIPLIERS
+        values = [float(part) for part in text.replace(";", ",").split(",") if part.strip()]
+    else:
+        values = [float(v) for v in raw]
+    unknown = [v for v in values if round(v, 6) not in {round(m, 6) for m in MULTIPLIERS}]
+    if unknown:
+        allowed = ", ".join(f"{m:g}" for m in MULTIPLIERS)
+        raise ValueError(f"Unsupported SDEV levels {unknown}; choose from {allowed}")
+    return tuple(values)
+
+
+def _parameters(start: str, end: str, days: str) -> dict:
+    return {
+        "lookback": {"type": "int", "default": 20, "min": 2},
+        "session_start": {"type": "string", "default": start},
+        "session_end": {"type": "string", "default": end},
+        "session_days": {"type": "string", "default": days, "options": list(SESSION_DAYS)},
+        "time_zone": {"type": "string", "default": "America/Los_Angeles"},
+        "levels": {"type": "string", "default": DEFAULT_LEVELS},
+        "extend": {
+            "type": "string",
+            "default": "session",
+            "options": ["session", "next_session"],
+        },
+    }
+
+
 class SessionSDEV(IndicatorBase):
-    """Net Change SDEV levels for a fixed intraday session."""
+    """Net Change SDEV levels for the New York morning session (5-9 AM Pacific)."""
 
     spec = IndicatorSpec(
         id="session_sdev",
@@ -175,21 +226,19 @@ class SessionSDEV(IndicatorBase):
             "Session open and +/- SDEV levels from the net change of the previous "
             "complete sessions (population SDEV)."
         ),
-        parameters={
-            "lookback": {"type": "int", "default": 20, "min": 2},
-            "session_start": {"type": "string", "default": "05:00"},
-            "session_end": {"type": "string", "default": "09:00"},
-            "time_zone": {"type": "string", "default": "America/Los_Angeles"},
-        },
+        parameters=_parameters("05:00", "09:00", "Mon-Fri"),
         outputs=OUTPUTS,
         required_fields=["open", "close"],
         supports_update=False,
         supports_vectorized=False,
         warmup_fn=_warmup_bars,
         requires_full_warmup=False,
+        sparse_outputs=True,
     )
 
     def batch(self, data: BarTensor, params: Dict) -> Tensor:
+        defaults = {k: v["default"] for k, v in self.spec.parameters.items()}
+        merged = {**defaults, **{k: v for k, v in params.items() if v is not None}}
         for field in ("open", "close"):
             if field not in data.fields:
                 raise KeyError(f"Field not found: {field}")
@@ -197,10 +246,13 @@ class SessionSDEV(IndicatorBase):
         close_idx = int(np.where(data.fields == "close")[0][0])
         epoch_ms = to_epoch_ms(data.time)
         kwargs = dict(
-            lookback=int(params.get("lookback", 20)),
-            session_start=str(params.get("session_start", "05:00")),
-            session_end=str(params.get("session_end", "09:00")),
-            time_zone=str(params.get("time_zone", "America/Los_Angeles")),
+            lookback=int(merged["lookback"]),
+            session_start=str(merged["session_start"]),
+            session_end=str(merged["session_end"]),
+            time_zone=str(merged["time_zone"]),
+            session_days=str(merged["session_days"]),
+            extend=str(merged["extend"]),
+            levels=parse_levels(merged["levels"]),
         )
         n_time, n_assets = data.data.shape[0], data.data.shape[1]
         out = np.full((n_time, n_assets, len(OUTPUTS)), np.nan, dtype=np.float64)
@@ -220,3 +272,18 @@ class SessionSDEV(IndicatorBase):
                 "output": np.array(OUTPUTS, dtype=object),
             },
         )
+
+
+class CmeOpenSDEV(SessionSDEV):
+    """The same Net Change SDEV recipe for the CME Globex open (3-7 PM Pacific)."""
+
+    spec = replace(
+        SessionSDEV.spec,
+        id="cme_open_sdev",
+        name="CME Open SDEV",
+        description=(
+            "CME Globex open (3 PM Pacific) and +/- SDEV levels from the net change of the "
+            "previous complete 3-7 PM sessions (population SDEV)."
+        ),
+        parameters=_parameters("15:00", "19:00", "Sun-Thu"),
+    )
