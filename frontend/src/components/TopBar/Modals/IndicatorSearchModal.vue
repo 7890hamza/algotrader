@@ -53,8 +53,11 @@ const currentMarketStore = useCurrentMarketStore();
 const currentTimeframeStore = useCurrentTimeframeStore();
 const indicatorsStore = useIndicatorsStore();
 
+// Ignore case and spaces, so "netchange" finds "Net Change SDEV".
+const searchKey = (text: string): string => text.toUpperCase().replace(/\s+/g, '');
+
 const filteredIndicators = computed(() => indicators.value
-  .filter((indicator) => indicator.name.toUpperCase().includes(indicatorInput.value.toUpperCase()))
+  .filter((indicator) => searchKey(indicator.name).includes(searchKey(indicatorInput.value)))
   .sort((a, b) => a.name.localeCompare(b.name)));
 
 const symbol = computed(() => currentMarketStore.symbol);
