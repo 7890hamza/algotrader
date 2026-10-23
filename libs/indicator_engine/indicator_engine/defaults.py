@@ -13,7 +13,7 @@ from .core.registry import IndicatorRegistry
 from .core.results import IndicatorResult
 from .engines.batch import BatchEngine
 from .engines.update import UpdateEngine
-from .indicators import BBANDS, MACD, RSI, SMA, CurrencyStrength
+from .indicators import BBANDS, MACD, RSI, SMA, CurrencyStrength, SessionSDEV
 
 _REGISTRY: Optional[IndicatorRegistry] = None
 _BATCH_ENGINE: Optional[BatchEngine] = None
@@ -28,6 +28,7 @@ def _create_registry() -> IndicatorRegistry:
             BBANDS(),
             MACD(),
             CurrencyStrength(),
+            SessionSDEV(),
         ]
     )
     try:

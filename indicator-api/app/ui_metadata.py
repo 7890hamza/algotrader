@@ -1,3 +1,28 @@
+from __future__ import annotations
+
+SDEV_UP_COLOR = "#26A69A"
+SDEV_DOWN_COLOR = "#EF5350"
+SDEV_OPEN_COLOR = "#E8B04F"
+SDEV_MULTIPLIERS = (0.25, 0.5, 0.75, 1.0, 1.25, 1.5, 1.75, 2.0, 2.5, 3.0)
+
+
+def _session_sdev_metadata() -> dict:
+    """Whole SDEVs solid and thick, halves solid, quarters dashed."""
+    outputs: dict[str, dict] = {
+        "open": {"type": "line", "plotOptions": {"lineWidth": 2, "color": SDEV_OPEN_COLOR}},
+    }
+    for m in SDEV_MULTIPLIERS:
+        if float(m).is_integer():
+            style = {"lineWidth": 2, "lineStyle": 0}
+        elif (m * 2).is_integer():
+            style = {"lineWidth": 1, "lineStyle": 0}
+        else:
+            style = {"lineWidth": 1, "lineStyle": 2}
+        outputs[f"+{m:g}"] = {"type": "line", "plotOptions": {**style, "color": SDEV_UP_COLOR}}
+        outputs[f"-{m:g}"] = {"type": "line", "plotOptions": {**style, "color": SDEV_DOWN_COLOR}}
+    return {"overlay": True, "outputs": outputs}
+
+
 UI_METADATA: dict[str, dict] = {
     "sma": {
         "overlay": True,
@@ -75,4 +100,5 @@ UI_METADATA: dict[str, dict] = {
             "USD": {"type": "line", "plotOptions": {"lineWidth": 2, "color": "#FF9800"}},
         },
     },
+    "session_sdev": _session_sdev_metadata(),
 }

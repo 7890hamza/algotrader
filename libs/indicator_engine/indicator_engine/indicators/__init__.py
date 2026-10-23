@@ -3,6 +3,7 @@ from .bbands import BBANDS
 from .currency_strength import CurrencyStrength
 from .macd import MACD
 from .rsi import RSI
+from .session_sdev import SessionSDEV
 from .sma import SMA
 
 __all__ = [
@@ -12,4 +13,5 @@ __all__ = [
     "MACD",
     "BBANDS",
     "CurrencyStrength",
+    "SessionSDEV",
 ]

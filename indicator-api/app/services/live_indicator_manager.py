@@ -147,8 +147,13 @@ class LiveIndicatorManager:
                 )
 
             await self._ensure_redis()
+            # Keep at least the indicator's warmup so long-lookback indicators
+            # (such as session SDEV levels) can produce live values.
+            required_rows = ENGINE_REGISTRY.get(spec.engine_id).spec.warmup(spec.parameters)
             update_engine = get_update_engine(
-                history=HistoryPolicy(mode="rolling", max_rows=self.history_rows),
+                history=HistoryPolicy(
+                    mode="rolling", max_rows=max(self.history_rows, required_rows)
+                ),
                 registry=ENGINE_REGISTRY,
             )
             update_engine.register_indicator(
@@ -319,10 +324,14 @@ class LiveIndicatorManager:
         if len(cols) != len(CANDLE_FIELDS):
             return 0, "none"
 
-        for timestamp, row in warmup_df[CANDLE_FIELDS].iterrows():
+        rows = warmup_df[CANDLE_FIELDS]
+        last = len(rows) - 1
+        for position, (timestamp, row) in enumerate(rows.iterrows()):
             row_values = row.to_numpy(dtype=np.float64)[np.newaxis, :]
             timestamp_ms = _to_timestamp_ms(timestamp)
-            update_engine.on_bar(
+            # Only the newest seeded bar is calculated; earlier ones are history.
+            submit = update_engine.on_bar if position == last else update_engine.seed_bar
+            submit(
                 timeframe=spec.timeframe,
                 timestamp_ms=timestamp_ms,
                 new_row=row_values,

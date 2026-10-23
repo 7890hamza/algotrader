@@ -32,3 +32,7 @@ services:
     depends_on: !override
       redis:
         condition: service_healthy
+
+  frontend:
+    # Come back with the rest of the stack after a reboot.
+    restart: always

@@ -18,6 +18,7 @@ from ..core.tensor import Tensor
 @dataclass
 class Registration:
     """Internal registration record for an indicator/timeframe pair."""
+
     indicator_id: str
     indicator: Indicator
     timeframe: str
@@ -36,6 +37,7 @@ class UpdateEngine:
     - Supports partial asset updates and cross-asset dependency buffering.
     - Stores vectorized state keyed by (indicator_id, param_id, timeframe).
     """
+
     def __init__(
         self,
         registry: IndicatorRegistry,
@@ -144,6 +146,27 @@ class UpdateEngine:
                 updated[reg.indicator_id] = tensor
         return updated
 
+    def seed_bar(
+        self,
+        timeframe: str,
+        timestamp_ms: int,
+        new_row: np.ndarray,
+        asset_mask: Optional[np.ndarray] = None,
+    ) -> None:
+        """Append a historical bar without computing indicators.
+
+        Use for warmup history, then submit the newest bar through `on_bar`, so
+        seeding costs one calculation instead of one per bar.
+        """
+        if timeframe not in self._bar_buffers:
+            raise KeyError(f"No bar buffer registered for timeframe: {timeframe}")
+        bar_buffer = self._bar_buffers[timeframe]
+        full_row, full_mask = self._normalize_row(bar_buffer, new_row, asset_mask)
+        if bar_buffer.append(timestamp_ms, full_row, full_mask):
+            self._bar_counters[timeframe] += 1
+            for reg in self._registrations.get(timeframe, []):
+                reg.result_buffer.append(timestamp_ms)
+
     def get_result_buffer(self, indicator_id: str, timeframe: str) -> ResultBuffer:
         """Return the rolling ResultBuffer for a registered indicator."""
         for reg in self._registrations.get(timeframe, []):
@@ -187,7 +210,9 @@ class UpdateEngine:
 
         for p_idx, (param_id, params) in enumerate(reg.param_grid):
             warmup = reg.indicator.spec.warmup(params)
-            if len(bar_buffer) < warmup:
+            if len(bar_buffer) == 0 or (
+                reg.indicator.spec.requires_full_warmup and len(bar_buffer) < warmup
+            ):
                 continue
 
             state_key = (reg.indicator_id, param_id, reg.timeframe)

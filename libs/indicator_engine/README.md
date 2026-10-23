@@ -121,6 +121,11 @@ Notes:
 - `macd`
 - `bbands`
 - `currency_strength` (fixed FX inputs: EURUSD, USDJPY, USDCHF, GBPUSD, AUDUSD, USDCAD, NZDUSD)
+- `session_sdev` (Net Change SDEV: session open and +/- 0.25..3 SDEV levels from the previous
+  complete sessions; default 5:00-9:00 AM Pacific, 20-session lookback, population SDEV)
+
+`requires_full_warmup=False` lets an indicator update live with less history than its warmup;
+`UpdateEngine.seed_bar` loads warmup history without calculating each bar.
 
 ## NaN Propagation
 

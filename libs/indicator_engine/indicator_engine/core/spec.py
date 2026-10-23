@@ -14,6 +14,7 @@ class IndicatorSpec:
     stable outputs for a given parameter set. This is used by engines
     to fetch enough history and to trim initial NaNs.
     """
+
     id: str
     name: str
     description: str = ""
@@ -24,6 +25,10 @@ class IndicatorSpec:
     supports_update: bool = False
     supports_vectorized: bool = False
     warmup_fn: Optional[Callable[[Dict[str, Any]], int]] = None
+    # False: the indicator copes with less history than `warmup` (it returns NaN
+    # until it has enough), so live updates run as soon as any bars exist. The
+    # warmup still sizes history fetches and live buffers.
+    requires_full_warmup: bool = True
 
     def warmup(self, params: Dict[str, Any]) -> int:
         if self.warmup_fn is None:
