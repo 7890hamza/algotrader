@@ -151,7 +151,8 @@ async def run_historical_indicator(
     indicator_result = BATCH_ENGINE.run(engine_id, bar_tensor, param_grid)
     indicator_raw = tensor_to_dataframe_single(indicator_result.tensor)
 
-    dropna_how = "all" if required_assets or indicator.spec.sparse_outputs else "any"
+    sparse = getattr(indicator.spec, "sparse_outputs", False)  # older engines lack the flag
+    dropna_how = "all" if required_assets or sparse else "any"
     indicator_data = trim_indicator_output(
         indicator_raw,
         original_start_ms=orig_start,
