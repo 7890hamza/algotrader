@@ -17,9 +17,14 @@ INDICATOR_MAP: dict[int, str] = {
 
 
 def get_available_indicators() -> list[dict]:
+    # Skip ids the installed indicator_engine doesn't provide (for example when the
+    # API code was updated but the image with the shared library was not rebuilt),
+    # so one missing indicator can't empty the whole list.
+    specs = ENGINE_REGISTRY.list_specs()
     return [
-        {"id": indicator_id, "name": ENGINE_REGISTRY.get(engine_id).spec.name}
+        {"id": indicator_id, "name": specs[engine_id].name}
         for indicator_id, engine_id in INDICATOR_MAP.items()
+        if engine_id in specs
     ]
 
 
