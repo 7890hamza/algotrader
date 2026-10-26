@@ -36,3 +36,6 @@ services:
   frontend:
     # Come back with the rest of the stack after a reboot.
     restart: always
+    environment:
+      # Pick up code changes after a git pull (Windows doesn't send file events).
+      VITE_USE_POLLING: "true"

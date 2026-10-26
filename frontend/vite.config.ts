@@ -23,6 +23,8 @@ export default defineConfig(({ mode }) => {
       host: '0.0.0.0',
       port: Number(env.FRONTEND_PORT || 5173),
       proxy: createDevServerProxy(env),
+      // Docker on Windows doesn't pass file-change events into the container; poll instead.
+      watch: env.VITE_USE_POLLING === 'true' ? { usePolling: true, interval: 500 } : undefined,
     },
     test: {
       environment: 'jsdom',
