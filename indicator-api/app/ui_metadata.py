@@ -33,6 +33,36 @@ def _session_sdev_metadata(open_label: str, label_prefix: str = "") -> dict:
     return {"overlay": True, "outputs": outputs}
 
 
+def _current_day_ohl_metadata() -> dict:
+    """Three step lines like NinjaTrader's CurrentDayOHL: dashed open, green high, red low.
+
+    lineType 1 draws steps, so the high and low jump outward when a new extreme
+    prints and the lines jump to the new values when a session starts.
+    """
+
+    def line(title: str, color: str, style: int) -> dict:
+        return {
+            "type": "line",
+            "plotOptions": {
+                "color": color,
+                "lineWidth": 1,
+                "lineStyle": style,
+                "lineType": 1,
+                "title": title,
+                "lastValueVisible": True,
+            },
+        }
+
+    return {
+        "overlay": True,
+        "outputs": {
+            "open": line("Open", "#E8A33D", 2),
+            "high": line("High", "#3FB950", 0),
+            "low": line("Low", "#E0574A", 0),
+        },
+    }
+
+
 # ES statistics for the ALN guide: 2016-2025, AMP 1-minute data, New York session
 # 08:00-16:00 New York time, a break = any trade one tick beyond the London level.
 ALN_STATS = {
@@ -194,4 +224,5 @@ UI_METADATA: dict[str, dict] = {
     "session_sdev": _session_sdev_metadata("NY Open"),
     "cme_open_sdev": _session_sdev_metadata("CME Open"),
     "aln_sessions": _aln_metadata(),
+    "current_day_ohl": _current_day_ohl_metadata(),
 }
