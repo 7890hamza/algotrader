@@ -5,6 +5,7 @@ import {
   buildAlnGuideLines,
   buildGuideView,
   buildSessionBoxes,
+  buildSessionTags,
   inWords,
   readGuideConfig,
 } from '@/utils/chart/alnGuide';
@@ -109,5 +110,20 @@ describe('alnGuide', () => {
     );
     expect(london).toMatchObject({ phase: 'london', pattern: 3, patternFinal: false });
     expect(buildGuideView([nyPoint(0)], config, 'UTC')).toMatchObject({ pattern: 4, patternFinal: true });
+  });
+
+  it('tags every past session with its date, pattern and recap', () => {
+    const day1 = [nyPoint(0), nyPoint(30, { dn_at: T0 + 30 * MIN })];
+    const nextDay = T0 + 24 * 3600 * 1000;
+    const day2 = [0, 1].map((i) => ({
+      ...nyPoint(0, { pattern: 3, ref_london_high: 7020, timestamp_ms: nextDay + i * MIN }),
+      dn_at: i ? nextDay + MIN : null,
+    }));
+    const tags = buildSessionTags([...day1, ...day2], [], 'America/Los_Angeles');
+    expect(tags).toHaveLength(2);
+    expect(tags[0]).toMatchObject({ date: '10/21', pattern: 4, result: 'reached' });
+    expect(tags[0].lines).toEqual(["London broke Asia's low only", 'Watch: London low 6,990.00', 'Reached at 5:30 AM']);
+    expect(tags[1]).toMatchObject({ date: '10/22', pattern: 3, result: 'missed' });
+    expect(tags[1].lines).toContain('London low broke first, at 5:01 AM');
   });
 });

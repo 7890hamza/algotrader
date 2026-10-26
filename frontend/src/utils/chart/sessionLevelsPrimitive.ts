@@ -1,6 +1,7 @@
 import type { CanvasRenderingTarget2D } from 'fancy-canvas';
 import type {
   AutoscaleInfo,
+  MouseEventParams,
   Coordinate,
   IPrimitivePaneRenderer,
   IPrimitivePaneView,
@@ -12,7 +13,7 @@ import type {
   Time,
 } from 'lightweight-charts';
 
-import type { SessionBox } from './alnGuide';
+import type { SessionBox, SessionTag } from './alnGuide';
 import {
   firstTouchTime,
   formatLevelPrice,
@@ -77,6 +78,105 @@ class SessionBoxesRenderer implements IPrimitivePaneRenderer {
       }
       context.restore();
     });
+  }
+}
+
+const TAG_FONT = '600 11px ui-monospace, "SF Mono", Consolas, monospace';
+const TAG_TEXT_FONT = '12px -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif';
+const TAG_COLORS: Record<number, [string, string]> = {
+  1: ['rgba(139, 148, 158, 0.22)', '#c9d1d9'],
+  2: ['rgba(139, 148, 158, 0.22)', '#c9d1d9'],
+  3: ['rgba(224, 87, 74, 0.25)', '#f0706a'],
+  4: ['rgba(63, 185, 80, 0.25)', '#3fb950'],
+};
+
+interface DrawableTag {
+  tag: SessionTag;
+  centerX: number;
+  y: number;
+  hovered: boolean;
+}
+
+function roundRect(ctx: CanvasRenderingContext2D, x: number, y: number, w: number, h: number, r: number): void {
+  ctx.beginPath();
+  ctx.moveTo(x + r, y);
+  ctx.arcTo(x + w, y, x + w, y + h, r);
+  ctx.arcTo(x + w, y + h, x, y + h, r);
+  ctx.arcTo(x, y + h, x, y, r);
+  ctx.arcTo(x, y, x + w, y, r);
+  ctx.closePath();
+}
+
+/** "10/23 [P3] ✓" centered over each session; hovering a session opens its recap. */
+class SessionTagsRenderer implements IPrimitivePaneRenderer {
+  constructor(private readonly tags: readonly DrawableTag[]) {}
+
+  draw(target: CanvasRenderingTarget2D): void {
+    target.useMediaCoordinateSpace(({ context: ctx, mediaSize }) => {
+      ctx.save();
+      ctx.textBaseline = 'middle';
+      const chipH = 18;
+      for (const { tag, centerX, y, hovered } of this.tags) {
+        const [bg, fg] = TAG_COLORS[tag.pattern] ?? TAG_COLORS[1];
+        ctx.font = TAG_FONT;
+        const date = tag.date;
+        const chip = `P${tag.pattern}`;
+        const mark = tag.result === 'reached' ? ' ✓' : tag.result === 'missed' ? ' ✕' : '';
+        const dateW = ctx.measureText(`${date} `).width;
+        const chipW = ctx.measureText(chip).width + 10;
+        const markW = mark ? ctx.measureText(mark).width : 0;
+        const total = dateW + chipW + markW + 12;
+        const x0 = centerX - total / 2;
+        const top = y - chipH;
+        roundRect(ctx, x0, top, total, chipH, 4);
+        ctx.fillStyle = hovered ? 'rgba(30, 35, 48, 0.95)' : 'rgba(19, 23, 34, 0.85)';
+        ctx.fill();
+        ctx.strokeStyle = hovered ? fg : 'rgba(255, 255, 255, 0.08)';
+        ctx.lineWidth = 1;
+        ctx.stroke();
+        ctx.fillStyle = '#d1d4dc';
+        ctx.fillText(date, x0 + 6, top + chipH / 2);
+        roundRect(ctx, x0 + 6 + dateW, top + 3, chipW, chipH - 6, 3);
+        ctx.fillStyle = bg;
+        ctx.fill();
+        ctx.fillStyle = fg;
+        ctx.fillText(chip, x0 + 11 + dateW, top + chipH / 2);
+        if (mark) {
+          ctx.fillStyle = tag.result === 'reached' ? '#e9c46a' : '#8a919c';
+          ctx.fillText(mark, x0 + 6 + dateW + chipW, top + chipH / 2);
+        }
+
+        if (!hovered) continue;
+        ctx.font = TAG_TEXT_FONT;
+        const lineH = 17;
+        const width = Math.max(...tag.lines.map((line) => ctx.measureText(line).width)) + 20;
+        const height = tag.lines.length * lineH + 12;
+        const left = Math.max(4, Math.min(mediaSize.width - width - 4, centerX - width / 2));
+        const cardTop = top - height - 6 >= 4 ? top - height - 6 : y + 6;
+        roundRect(ctx, left, cardTop, width, height, 6);
+        ctx.fillStyle = 'rgba(19, 23, 34, 0.96)';
+        ctx.fill();
+        ctx.strokeStyle = 'rgba(255, 255, 255, 0.1)';
+        ctx.stroke();
+        tag.lines.forEach((line, i) => {
+          ctx.fillStyle = i === 0 ? '#e6e6e6' : '#9aa4b2';
+          ctx.fillText(line, left + 10, cardTop + 6 + lineH * i + lineH / 2);
+        });
+      }
+      ctx.restore();
+    });
+  }
+}
+
+class SessionTagsPaneView implements IPrimitivePaneView {
+  constructor(private readonly primitive: SessionLevelsPrimitive) {}
+
+  zOrder(): PrimitivePaneViewZOrder {
+    return 'top';
+  }
+
+  renderer(): IPrimitivePaneRenderer | null {
+    return this.primitive.createTagRenderer();
   }
 }
 
@@ -192,10 +292,19 @@ export class SessionLevelsPrimitive implements ISeriesPrimitive<Time> {
     new SessionBoxesPaneView(this, 'fill'),
     this.paneView,
     new SessionBoxesPaneView(this, 'labels'),
+    new SessionTagsPaneView(this),
   ];
   private attachedParams: SeriesAttachedParameter<Time, SeriesType> | null = null;
   private segments: SessionLevelSegment[];
   private boxes: SessionBox[] = [];
+  private tags: SessionTag[] = [];
+  private hoverX: number | null = null;
+  private readonly onCrosshairMove = (param: MouseEventParams<Time>): void => {
+    const x = param.point ? Number(param.point.x) : null;
+    if (x === this.hoverX) return;
+    this.hoverX = x;
+    if (this.tags.length) this.attachedParams?.requestUpdate();
+  };
   private precision = 2;
 
   constructor(segments: readonly SessionLevelSegment[] = []) {
@@ -209,6 +318,11 @@ export class SessionLevelsPrimitive implements ISeriesPrimitive<Time> {
 
   setBoxes(boxes: readonly SessionBox[]): void {
     this.boxes = [...boxes];
+    this.attachedParams?.requestUpdate();
+  }
+
+  setTags(tags: readonly SessionTag[]): void {
+    this.tags = [...tags];
     this.attachedParams?.requestUpdate();
   }
 
@@ -227,14 +341,16 @@ export class SessionLevelsPrimitive implements ISeriesPrimitive<Time> {
 
   attached(param: SeriesAttachedParameter<Time, SeriesType>): void {
     this.attachedParams = param;
+    param.chart.subscribeCrosshairMove(this.onCrosshairMove);
   }
 
   detached(): void {
+    this.attachedParams?.chart.unsubscribeCrosshairMove(this.onCrosshairMove);
     this.attachedParams = null;
   }
 
   paneViews(): readonly IPrimitivePaneView[] {
-    return this.segments.length > 0 || this.boxes.length > 0 ? this.paneViewsList : EMPTY_PANE_VIEWS;
+    return this.segments.length > 0 || this.boxes.length > 0 || this.tags.length > 0 ? this.paneViewsList : EMPTY_PANE_VIEWS;
   }
 
   autoscaleInfo(startTimePoint: Logical, endTimePoint: Logical): AutoscaleInfo | null {
@@ -244,6 +360,25 @@ export class SessionLevelsPrimitive implements ISeriesPrimitive<Time> {
     if (visible.length === 0) return null;
     const prices = visible.map((segment) => segment.price);
     return { priceRange: { minValue: Math.min(...prices), maxValue: Math.max(...prices) } };
+  }
+
+  createTagRenderer(): IPrimitivePaneRenderer | null {
+    const params = this.attachedParams;
+    if (!params || this.tags.length === 0) return null;
+    const drawables: DrawableTag[] = [];
+    for (const tag of this.tags) {
+      const start = this.timeToX(tag.startTime);
+      const end = this.timeToX(tag.endTime);
+      const top = params.series.priceToCoordinate(tag.top);
+      if (start === null || end === null || top === null) continue;
+      const left = Number(start);
+      const right = Number(end);
+      if (right - left < 60) continue;
+      const hovered = this.hoverX !== null && this.hoverX >= left && this.hoverX <= right;
+      // Above the box labels ("Asia H ...") that sit on top of each box.
+      drawables.push({ tag, centerX: (left + right) / 2, y: Number(top) - 20, hovered });
+    }
+    return drawables.length > 0 ? new SessionTagsRenderer(drawables) : null;
   }
 
   createBoxRenderer(layer: 'fill' | 'labels'): IPrimitivePaneRenderer | null {

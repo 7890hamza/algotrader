@@ -1,7 +1,15 @@
 import { useIndicatorsStore } from '@/stores/indicatorsStore';
 import type { IndicatorDataPoint, IndicatorInfo, JsonObject } from '@/types/contracts';
 
-import { buildAlnGuideLines, buildSessionBoxes, readGuideConfig, type SessionBox } from './alnGuide';
+import {
+  buildAlnGuideLines,
+  buildSessionBoxes,
+  buildSessionTags,
+  readGuideConfig,
+  type SessionBox,
+  type SessionTag,
+} from './alnGuide';
+import { DEFAULT_CHART_TIME_ZONE } from './chartTimeZone';
 
 import {
   buildSessionLevelSegments,
@@ -39,6 +47,7 @@ export interface IndicatorChartManager {
     segments: readonly SessionLevelSegment[],
     precision?: number,
     boxes?: readonly SessionBox[],
+    tags?: readonly SessionTag[],
   ): boolean;
   clearSessionLevels?(id: string): boolean;
 }
@@ -158,7 +167,8 @@ export class IndicatorManager {
     const guide = readGuideConfig(indicator.info.guide);
     if (guide) segments.push(...buildAlnGuideLines(points, guide));
     const boxes = buildSessionBoxes(points, indicator.info.outputs);
-    this.chartManager.setSessionLevels(id, PRICE_SERIES_KEY, segments, undefined, boxes);
+    const tags = guide ? buildSessionTags(points, boxes, DEFAULT_CHART_TIME_ZONE) : [];
+    this.chartManager.setSessionLevels(id, PRICE_SERIES_KEY, segments, undefined, boxes, tags);
   }
 
   transformIndicatorData(data: readonly IndicatorDataPoint[], outputKey: string): ChartValuePoint[] {

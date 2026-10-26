@@ -411,3 +411,89 @@ export function buildGuideView(
   }
   return { phase, pattern, patternFinal: true, sentence, tone, steps: steps(step), checks, recent, details };
 }
+
+/** One label centered over a whole Asia → London → New York session. */
+export interface SessionTag {
+  id: string;
+  /** Epoch seconds: start of Asia (or London / New York if missing) and last New York bar. */
+  startTime: number;
+  endTime: number;
+  /** Highest price of the session's boxes; the tag sits just above it. */
+  top: number;
+  date: string;
+  pattern: number;
+  /** Plain-language recap shown on hover. */
+  lines: string[];
+  /** reached = the lean played out, missed = it didn't, none = P1/P2. */
+  result: 'reached' | 'missed' | 'none';
+}
+
+const SESSION_LOOKBACK_SECONDS = 13 * 3600;
+
+/** Tags for every New York session in `points`, with the story of that day. */
+export function buildSessionTags(
+  points: readonly IndicatorDataPoint[],
+  boxes: readonly SessionBox[],
+  timeZone: string,
+): SessionTag[] {
+  const sorted = sortedPoints(points);
+  // One New York session never has a 4-hour hole; the next one starts ~16 hours later.
+  const maxGap = 4 * 3600;
+  const runs: IndicatorDataPoint[][] = [];
+  let run: IndicatorDataPoint[] = [];
+  for (const point of sorted) {
+    const pattern = num(point, 'pattern');
+    const prev = run[run.length - 1];
+    const sameRun = prev && pattern !== null
+      && num(prev, 'pattern') === pattern
+      && num(prev, 'ref_london_high') === num(point, 'ref_london_high')
+      && Number(point.timestamp_ms) / 1000 - Number(prev.timestamp_ms) / 1000 <= maxGap;
+    if (!sameRun && run.length) runs.push(run);
+    if (!sameRun) run = [];
+    if (pattern !== null) run.push(point);
+  }
+  if (run.length) runs.push(run);
+
+  const clock = (ms: number): string => formatClock(ms, timeZone);
+  return runs.map((nyRun) => {
+    const first = nyRun[0];
+    const last = nyRun[nyRun.length - 1];
+    const nyStart = Math.floor(Number(first.timestamp_ms) / 1000);
+    const nyEnd = Math.floor(Number(last.timestamp_ms) / 1000);
+    const mine = boxes.filter((box) =>
+      (box.endTime <= nyStart && box.endTime >= nyStart - SESSION_LOOKBACK_SECONDS)
+      || (box.startTime >= nyStart && box.startTime <= nyEnd));
+    const pattern = num(first, 'pattern')!;
+    const lh = num(first, 'ref_london_high')!;
+    const ll = num(first, 'ref_london_low')!;
+    const upAt = num(last, 'up_at');
+    const dnAt = num(last, 'dn_at');
+    const lines = [PATTERN_TEXT[pattern] ?? 'Unknown pattern'];
+    let result: SessionTag['result'] = 'none';
+    if (pattern === 3 || pattern === 4) {
+      const watch = pattern === 3 ? 'high' : 'low';
+      const other = pattern === 3 ? 'low' : 'high';
+      const wAt = pattern === 3 ? upAt : dnAt;
+      const oAt = pattern === 3 ? dnAt : upAt;
+      lines.push(`Watch: London ${watch} ${formatPrice(pattern === 3 ? lh : ll)}`);
+      if (oAt !== null && (wAt === null || oAt < wAt)) lines.push(`London ${other} broke first, at ${clock(oAt)}`);
+      lines.push(wAt !== null ? `Reached at ${clock(wAt)}` : 'Not reached');
+      result = wAt !== null ? 'reached' : 'missed';
+    } else {
+      lines.push('No clear lean');
+      const firstSide = upAt !== null && (dnAt === null || upAt <= dnAt) ? ['high', upAt] as const
+        : dnAt !== null ? ['low', dnAt] as const : null;
+      lines.push(firstSide ? `London ${firstSide[0]} went first, at ${clock(firstSide[1])}` : 'Neither London level was taken');
+    }
+    return {
+      id: `tag@${nyStart}`,
+      startTime: Math.min(nyStart, ...mine.map((box) => box.startTime)),
+      endTime: Math.max(nyEnd, ...mine.map((box) => box.endTime)),
+      top: Math.max(...nyRun.map((p) => num(p, 'ny_high') ?? -Infinity), ...mine.map((box) => box.high)),
+      date: new Date(nyStart * 1000).toLocaleDateString('en-US', { month: '2-digit', day: '2-digit', timeZone }),
+      pattern,
+      lines,
+      result,
+    };
+  });
+}
