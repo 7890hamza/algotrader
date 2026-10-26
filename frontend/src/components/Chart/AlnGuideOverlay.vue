@@ -5,12 +5,26 @@
       :class="`aln-story--${view.tone}`"
       data-testid="aln-story"
     >
+      <span
+        v-if="view.pattern"
+        class="aln-badge"
+        :class="[`aln-badge--p${view.pattern}`, { 'aln-badge--soft': !view.patternFinal }]"
+        data-testid="aln-badge"
+      >P{{ view.pattern }}</span>
+      <span v-if="view.pattern && !view.patternFinal" class="aln-badge-note">so far</span>
       {{ view.sentence }}
     </div>
 
     <div class="aln-card" data-testid="aln-card">
       <button class="aln-card-head" type="button" @click="open = !open">
-        <span class="aln-card-title">Walk-through</span>
+        <span class="aln-card-title">
+          {{ dayLabel }}
+          <span
+            v-if="view.pattern"
+            class="aln-badge"
+            :class="[`aln-badge--p${view.pattern}`, { 'aln-badge--soft': !view.patternFinal }]"
+          >P{{ view.pattern }}</span>
+        </span>
         <span class="aln-card-toggle">{{ open ? '–' : '+' }}</span>
       </button>
 
@@ -109,6 +123,13 @@ const view = computed(() => {
   return buildGuideView(points, config, props.timeZone);
 });
 
+const dayLabel = computed(() => {
+  const ms = Number(indicator.value?.lastLivePoint?.timestamp_ms ?? Date.now());
+  // The session belongs to the New York day: from 5 PM Pacific it is tomorrow's.
+  const day = new Date(ms + 7 * 3600 * 1000);
+  return day.toLocaleDateString("en-US", { month: "2-digit", day: "2-digit", timeZone: props.timeZone });
+});
+
 function mark(state: GuideCheck["state"]): string {
   return state === "yes" ? "✓" : state === "no" ? "✕" : "•";
 }
@@ -132,6 +153,25 @@ function mark(state: GuideCheck["state"]): string {
   pointer-events: none;
   box-shadow: 0 2px 10px rgba(0, 0, 0, 0.35);
 }
+
+.aln-badge {
+  display: inline-block;
+  margin-right: 6px;
+  padding: 1px 6px;
+  border-radius: 4px;
+  font-family: ui-monospace, "SF Mono", Consolas, monospace;
+  font-size: 11px;
+  font-weight: 700;
+  vertical-align: 1px;
+}
+
+.aln-badge--p1, .aln-badge--p2 { background: rgba(139, 148, 158, 0.18); color: #c9d1d9; }
+.aln-badge--p3 { background: rgba(224, 87, 74, 0.2); color: #f0706a; }
+.aln-badge--p4 { background: rgba(63, 185, 80, 0.2); color: #3fb950; }
+.aln-badge--soft { opacity: 0.55; border: 1px dashed currentColor; }
+.aln-badge-note { margin-right: 6px; color: #8a919c; font-size: 11px; }
+.aln-card-title { display: flex; align-items: center; gap: 8px; font-family: ui-monospace, "SF Mono", Consolas, monospace; }
+.aln-card-title .aln-badge { margin: 0; }
 
 .aln-story--done { border-left-color: #3fb950; }
 .aln-story--changed { border-left-color: #56606b; color: #b7bec7; }
@@ -164,7 +204,6 @@ function mark(state: GuideCheck["state"]): string {
   cursor: pointer;
 }
 
-.aln-card-title { font-weight: 600; letter-spacing: 0.02em; }
 .aln-card-toggle { color: #8a919c; font-size: 14px; }
 
 .aln-steps {

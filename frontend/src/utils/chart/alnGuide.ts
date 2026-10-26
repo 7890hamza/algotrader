@@ -52,6 +52,9 @@ export interface GuideRecentDay {
 
 export interface GuideView {
   phase: 'asia' | 'london' | 'newyork' | 'over' | 'none';
+  /** Overnight pattern 1-4: a guess while London is still trading, final from 5:00 AM. */
+  pattern: number | null;
+  patternFinal: boolean;
   sentence: string;
   tone: GuideTone;
   steps: GuideStep[];
@@ -266,7 +269,7 @@ export function buildGuideView(
 ): GuideView {
   const sorted = sortedPoints(points);
   const latest = sorted[sorted.length - 1] ?? null;
-  const empty: GuideView = { phase: 'none', sentence: 'Waiting for data.', tone: 'waiting', steps: steps('asia'), checks: [], recent: [], details: [] };
+  const empty: GuideView = { phase: 'none', pattern: null, patternFinal: false, sentence: 'Waiting for data.', tone: 'waiting', steps: steps('asia'), checks: [], recent: [], details: [] };
   if (!latest) return empty;
 
   const clock = (ms: number): string => formatClock(ms, timeZone);
@@ -293,14 +296,16 @@ export function buildGuideView(
     const lh = num(latest, 'london_high')!;
     const ll = num(latest, 'london_low')!;
     let what = 'London is staying inside Asia\'s range so far.';
+    let soFar: number | null = null;
     if (ah !== null && al !== null) {
       const up = lh > ah;
       const dn = ll < al;
+      soFar = up && dn ? 1 : up ? 3 : dn ? 4 : 2;
       what = up && dn ? 'London is pushing above Asia\'s high and below its low.'
         : up ? 'London is pushing above Asia\'s high.'
           : dn ? 'London is pushing below Asia\'s low.' : what;
     }
-    return { ...empty, phase, tone: 'waiting', steps: steps('london'),
+    return { ...empty, phase, pattern: soFar, tone: 'waiting', steps: steps('london'),
       sentence: `${what} The picture locks at 5:00 AM.`,
       checks: [{ question: 'Wait for 5:00 AM', answer: 'The pattern isn\'t set until London closes.', state: 'open' }] };
   }
@@ -332,7 +337,7 @@ export function buildGuideView(
     const first = upAt !== null && (dnAt === null || upAt <= dnAt) ? ['high', upAt] as const
       : dnAt !== null ? ['low', dnAt] as const : null;
     return {
-      phase, recent, details, steps: steps(over ? 'done' : 'watch'), tone: 'live',
+      phase, pattern, patternFinal: true, recent, details, steps: steps(over ? 'done' : 'watch'), tone: 'live',
       sentence: pattern === 1
         ? 'London broke both sides of Asia. Today has no clear lean: it\'s close to a coin flip.'
         : 'London stayed inside Asia\'s range. New York usually breaks out of London\'s range, often on both sides.',
@@ -404,5 +409,5 @@ export function buildGuideView(
       });
     }
   }
-  return { phase, sentence, tone, steps: steps(step), checks, recent, details };
+  return { phase, pattern, patternFinal: true, sentence, tone, steps: steps(step), checks, recent, details };
 }

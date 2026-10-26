@@ -95,5 +95,19 @@ describe('alnGuide', () => {
     const view = buildGuideView([{ timestamp_ms: 0, asia_high: 7005, asia_low: 6995 }], config, 'UTC');
     expect(view.phase).toBe('asia');
     expect(view.sentence).toBe("Asia is setting tonight's range: 6,995.00 to 7,005.00.");
+    expect(view.pattern).toBeNull();
+  });
+
+  it('labels the kind of day: a guess during London, final at 5:00 AM', () => {
+    const london = buildGuideView(
+      [
+        { timestamp_ms: 0, asia_high: 7005, asia_low: 6995 },
+        { timestamp_ms: MIN, london_high: 7008, london_low: 6998 },
+      ],
+      config,
+      'UTC',
+    );
+    expect(london).toMatchObject({ phase: 'london', pattern: 3, patternFinal: false });
+    expect(buildGuideView([nyPoint(0)], config, 'UTC')).toMatchObject({ pattern: 4, patternFinal: true });
   });
 });
