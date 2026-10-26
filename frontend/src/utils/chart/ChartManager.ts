@@ -47,6 +47,7 @@ import {
 import type { MeasurementOverlayPrimitive } from './measurementOverlayPrimitive';
 import type { SessionLevelSegment } from './sessionLevels';
 import { SessionLevelsPrimitive } from './sessionLevelsPrimitive';
+import type { SessionBox } from './alnGuide';
 
 export type ChartSeriesType =
   | 'line'
@@ -482,6 +483,7 @@ export class ChartManager {
     seriesKey: string,
     segments: readonly SessionLevelSegment[],
     precision?: number,
+    boxes: readonly SessionBox[] = [],
   ): boolean {
     const seriesInfo = this.series.get(seriesKey);
     if (!seriesInfo) {
@@ -492,6 +494,7 @@ export class ChartManager {
       const existing = this.sessionLevelPrimitives.get(id);
       if (existing && existing.series === seriesInfo.series) {
         if (precision !== undefined) existing.primitive.setPrecision(precision);
+        existing.primitive.setBoxes(boxes);
         existing.primitive.setSegments(segments);
         return true;
       }
@@ -499,6 +502,7 @@ export class ChartManager {
         this.clearSessionLevels(id);
       }
       const primitive = new SessionLevelsPrimitive(segments);
+      primitive.setBoxes(boxes);
       if (precision !== undefined) primitive.setPrecision(precision);
       seriesInfo.series.attachPrimitive(primitive);
       this.sessionLevelPrimitives.set(id, { seriesKey, series: seriesInfo.series, primitive });

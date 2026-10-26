@@ -45,6 +45,8 @@
       <span class="legend-value">C: <span ref="legendClose">-</span></span>
     </span>
 
+    <aln-guide-overlay :time-zone="chartTimeZone" />
+
     <div>
       <indicator
         v-for="indicator in getAllIndicators()"
@@ -108,6 +110,7 @@ import { getOrCreatePaneOverlayWrapper } from "@/utils/chart/paneOverlay";
 import { timeframeToMinutes } from "@/utils/timeframes";
 import { displayTimeZoneForTimeframe } from "@/utils/chart/chartTimeZone";
 import Indicator from "@/components/Chart/Indicator/Indicator.vue";
+import AlnGuideOverlay from "@/components/Chart/AlnGuideOverlay.vue";
 import { CloseCircleOutline } from "@/icons";
 
 const WHEEL_SETTLE_MS = 250;
@@ -181,6 +184,7 @@ export default defineComponent({
   name: "ChartArea",
 
   components: {
+    AlnGuideOverlay,
     CloseCircleOutline,
     Indicator,
     NButton,
@@ -230,6 +234,10 @@ export default defineComponent({
   },
 
   computed: {
+    chartTimeZone(): string {
+      return displayTimeZoneForTimeframe(this.currentTimeframeStore.value);
+    },
+
     indicatorManager() {
       return this.chartInfrastructure.indicatorManager;
     },

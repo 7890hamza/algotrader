@@ -13,6 +13,7 @@ INDICATOR_MAP: dict[int, str] = {
     5: "currency_strength",
     6: "session_sdev",
     7: "cme_open_sdev",
+    8: "aln_sessions",
 }
 
 
@@ -44,6 +45,7 @@ def get_indicator_metadata(indicator_id: int) -> dict:
         "outputs": outputs,
         "parameters": spec.parameters,
         "inputs": spec.required_assets or [],
+        **({"guide": ui["guide"]} if "guide" in ui else {}),
     }
 
 

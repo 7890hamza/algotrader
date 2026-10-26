@@ -1,5 +1,7 @@
 import { useIndicatorsStore } from '@/stores/indicatorsStore';
-import type { IndicatorDataPoint, JsonObject } from '@/types/contracts';
+import type { IndicatorDataPoint, IndicatorInfo, JsonObject } from '@/types/contracts';
+
+import { buildAlnGuideLines, buildSessionBoxes, readGuideConfig, type SessionBox } from './alnGuide';
 
 import {
   buildSessionLevelSegments,
@@ -36,6 +38,7 @@ export interface IndicatorChartManager {
     seriesKey: string,
     segments: readonly SessionLevelSegment[],
     precision?: number,
+    boxes?: readonly SessionBox[],
   ): boolean;
   clearSessionLevels?(id: string): boolean;
 }
@@ -56,6 +59,15 @@ const CHART_SERIES_TYPES = new Set<ChartSeriesType>([
 
 function isChartSeriesType(value: string | undefined): value is ChartSeriesType {
   return value !== undefined && CHART_SERIES_TYPES.has(value as ChartSeriesType);
+}
+
+/** Indicators drawn by the session-levels primitive: levels, boxes or a guide. */
+function drawsOnPrice(info: IndicatorInfo): boolean {
+  return (
+    hasLevelOutputs(info.outputs) ||
+    Object.values(info.outputs).some((output) => output.type === 'box') ||
+    readGuideConfig(info.guide) !== null
+  );
 }
 
 function toChartSeriesOptions(options: JsonObject | undefined): ChartSeriesOptions {
@@ -116,7 +128,7 @@ export class IndicatorManager {
       }
     }
 
-    if (hasLevelOutputs(info.outputs)) {
+    if (drawsOnPrice(info)) {
       this.levelPoints.set(id, [...data]);
       this.renderLevels(id);
     }
@@ -143,7 +155,10 @@ export class IndicatorManager {
       this.levelStyles.get(id) ?? {},
       { sessionSeconds: this.sessionSeconds(indicator.parameters) },
     );
-    this.chartManager.setSessionLevels(id, PRICE_SERIES_KEY, segments);
+    const guide = readGuideConfig(indicator.info.guide);
+    if (guide) segments.push(...buildAlnGuideLines(points, guide));
+    const boxes = buildSessionBoxes(points, indicator.info.outputs);
+    this.chartManager.setSessionLevels(id, PRICE_SERIES_KEY, segments, undefined, boxes);
   }
 
   transformIndicatorData(data: readonly IndicatorDataPoint[], outputKey: string): ChartValuePoint[] {
@@ -188,7 +203,7 @@ export class IndicatorManager {
 
     const { info, data } = indicator;
 
-    if (hasLevelOutputs(info.outputs)) {
+    if (drawsOnPrice(info)) {
       this.levelPoints.set(id, [...data]);
       this.renderLevels(id);
     }
@@ -217,7 +232,7 @@ export class IndicatorManager {
       return;
     }
 
-    if (hasLevelOutputs(indicator.info.outputs)) {
+    if (drawsOnPrice(indicator.info)) {
       const points = this.levelPoints.get(id) ?? [...indicator.data];
       this.levelPoints.set(id, upsertIndicatorPoint(points, point));
       this.renderLevels(id);

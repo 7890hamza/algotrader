@@ -1,3 +1,4 @@
+from .aln_sessions import AlnSessions
 from .base import IndicatorBase
 from .bbands import BBANDS
 from .currency_strength import CurrencyStrength
@@ -15,4 +16,5 @@ __all__ = [
     "CurrencyStrength",
     "SessionSDEV",
     "CmeOpenSDEV",
+    "AlnSessions",
 ]

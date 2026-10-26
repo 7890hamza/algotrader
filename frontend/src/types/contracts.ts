@@ -111,6 +111,8 @@ export interface IndicatorInfo {
   inputs: string[];
   outputs: Record<string, IndicatorOutputMetadata>;
   parameters: Record<string, JsonObject>;
+  /** Optional walk-through settings (for example the ALN guide). */
+  guide?: JsonObject;
 }
 
 export interface IndicatorDataPoint {
