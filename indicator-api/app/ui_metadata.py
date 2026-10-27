@@ -61,8 +61,19 @@ def _am_tbr_metadata() -> dict:
             "markerFrom": "revert_at",
             "markerColor": "#F2D16B",
         },
-        "+0.25": level("AM TBR +0.25", SDEV_LEVEL_COLOR, "high"),
-        "-0.25": level("AM TBR -0.25", SDEV_LEVEL_COLOR, "low"),
+        # An arrow marks the first touch, on the line touched first only.
+        "+0.25": {
+            **level("AM TBR +0.25", SDEV_LEVEL_COLOR, "high"),
+            "touchWhen": {"key": "touch_side", "equals": 1},
+            "touchShape": "arrow",
+            "touchColor": "#3FB950",
+        },
+        "-0.25": {
+            **level("AM TBR -0.25", SDEV_LEVEL_COLOR, "low"),
+            "touchWhen": {"key": "touch_side", "equals": -1},
+            "touchShape": "arrow",
+            "touchColor": "#E0574A",
+        },
     }
     for key, (title, color) in zones.items():
         for edge, words in (("near", "median"), ("far", "P90")):
@@ -187,13 +198,19 @@ def _aln_tbr_metadata() -> dict:
             "markerColor": "#F2D16B",
             "plotOptions": {"lineWidth": 1, "lineStyle": 0, "color": color},
         }
-        for side, sign, touch in (("up", "+", "high"), ("dn", "-", "low")):
+        for side, sign, touch, value, arrow in (
+            ("up", "+", "high", 1, "#3FB950"),
+            ("dn", "-", "low", -1, "#E0574A"),
+        ):
             outputs[f"{key}_{side}"] = {
                 "type": "level",
                 "label": f"{label} {sign}0.25",
                 "labelColor": SDEV_LABEL_COLOR,
                 "showPrice": True,
                 "touch": touch,
+                "touchWhen": {"key": f"{key}_side", "equals": value},
+                "touchShape": "arrow",
+                "touchColor": arrow,
                 "plotOptions": {"lineWidth": 1, "lineStyle": DOTTED, "color": color},
             }
         for zone, words, opacity in zones:

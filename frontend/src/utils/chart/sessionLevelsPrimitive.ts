@@ -270,7 +270,19 @@ class SessionLevelsRenderer implements IPrimitivePaneRenderer {
         context.stroke();
       }
       for (const { segment, y, touchX, text, labelX } of placed) {
-        if (touchX !== null) {
+        if (touchX !== null && segment.touchShape === 'arrow') {
+          // Up-touch: arrow above the line pointing down at it; down-touch: below, pointing up.
+          const dir = segment.touch === 'high' ? -1 : 1;
+          const tip = y + dir * 3;
+          const base = y + dir * 13;
+          context.beginPath();
+          context.moveTo(touchX, tip);
+          context.lineTo(touchX - 6, base);
+          context.lineTo(touchX + 6, base);
+          context.closePath();
+          context.fillStyle = segment.touchColor ?? segment.color;
+          context.fill();
+        } else if (touchX !== null) {
           context.beginPath();
           context.arc(touchX, y, TOUCH_RADIUS_PX, 0, Math.PI * 2);
           context.fillStyle = TOUCH_FILL;

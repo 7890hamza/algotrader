@@ -28,6 +28,9 @@ export interface SessionLevelSegment {
   /** Epoch seconds of a diamond drawn on the line (e.g. price came back to it), or null. */
   markerTime?: number | null;
   markerColor?: string;
+  /** Draw the first touch as an arrow (in touchColor) instead of a circle. */
+  touchShape?: 'circle' | 'arrow';
+  touchColor?: string;
 }
 
 export interface SessionLevelOptions {
@@ -105,6 +108,12 @@ export function buildSessionLevelSegments(
     // markerFrom names an output holding epoch ms; a diamond goes on the line at that time.
     const markerKey = typeof output.markerFrom === 'string' ? output.markerFrom : null;
     const markerColor = typeof output.markerColor === 'string' ? output.markerColor : undefined;
+    // touchWhen {key, equals}: mark the touch only on sessions where that output has that value
+    // (e.g. only the line that was touched first).
+    const when = output.touchWhen as { key?: unknown; equals?: unknown } | undefined;
+    const whenKey = when && typeof when.key === 'string' ? when.key : null;
+    const touchShape = output.touchShape === 'arrow' ? 'arrow' : undefined;
+    const touchColor = typeof output.touchColor === 'string' ? output.touchColor : undefined;
     let current: SessionLevelSegment | null = null;
 
     const close = (): void => {
@@ -122,10 +131,12 @@ export function buildSessionLevelSegments(
 
       const markerMs = markerKey ? sorted[i][markerKey] : null;
       const markerTime = typeof markerMs === 'number' && Number.isFinite(markerMs) ? Math.floor(markerMs / 1000) : null;
+      const whenMet = whenKey !== null && sorted[i][whenKey] === when?.equals;
       const seg = current as SessionLevelSegment | null;
       if (seg && Math.abs(seg.price - value) <= PRICE_EPSILON && time - seg.endTime <= maxGap) {
         seg.endTime = time;
         if (markerTime !== null) seg.markerTime = markerTime;
+        if (whenMet) seg.touch = touch;
         continue;
       }
 
@@ -139,7 +150,9 @@ export function buildSessionLevelSegments(
         color: stringOption(options, 'color', DEFAULT_COLOR),
         lineWidth: numberOption(options, 'lineWidth', 1),
         lineStyle: numberOption(options, 'lineStyle', 0),
-        touch,
+        touch: whenKey === null || whenMet ? touch : null,
+        touchShape,
+        touchColor,
         labelColor,
         showPrice,
         markerTime,

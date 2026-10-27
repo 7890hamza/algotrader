@@ -6,6 +6,7 @@ lines sit at open +/- 0.25 SDEV. After the first touch, zones appear (median to 
 percentile, ``*_mid`` = 75th percentile, in SDEV from the open), from the ES 2016-2025
 study: ``stretch`` (push past the line on sessions that came back), ``runaway`` (sessions
 that never came back) and ``follow`` (past the open on the other side after coming back).
+``<s>_side`` is +1 / -1 from the first touch on (which line was touched first) and
 ``<s>_revert_at`` is the epoch ms of the first trade back at the open after the touch.
 
 Sessions may cross midnight (Asia 20:00-02:00). A session is complete when it has at
@@ -63,7 +64,7 @@ ZONE_STATS: dict[str, dict[str, tuple[float, float, float]]] = {
         "follow": (0.511, 0.995, 1.648),
     },
 }
-FIELDS = ["open", "up", "dn", "revert_at"] + [
+FIELDS = ["open", "up", "dn", "revert_at", "side"] + [
     f"{z}_{e}" for z in ZONES for e in ("near", "far", "mid")
 ]
 OUTPUTS = [f"{s}_{f}" for s in SESSIONS for f in FIELDS]
@@ -140,10 +141,11 @@ def session_fade(
                     j = k + 1 + int(np.argmax(back))
                     out[rows[j:], 3] = epoch_ms[rows[j]]
                 after = rows[k:]
+                out[after, 4] = side
                 for z_i, zone in enumerate(ZONES):
                     med, p75, p90 = stats[zone]
                     direction = -side if zone == "follow" else side
-                    col = 4 + 3 * z_i
+                    col = 5 + 3 * z_i
                     out[after, col] = o + direction * med * pts
                     out[after, col + 1] = o + direction * p90 * pts
                     out[after, col + 2] = o + direction * p75 * pts
