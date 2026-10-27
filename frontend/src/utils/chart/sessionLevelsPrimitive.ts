@@ -201,6 +201,7 @@ interface DrawableSegment {
   endX: number;
   y: number;
   touchX: number | null;
+  markerX: number | null;
 }
 
 function crisp(value: number): number {
@@ -251,6 +252,21 @@ class SessionLevelsRenderer implements IPrimitivePaneRenderer {
       }
 
       context.setLineDash([]);
+      for (const { segment, y, markerX } of placed) {
+        if (markerX === null) continue;
+        const r = 5;
+        context.beginPath();
+        context.moveTo(markerX, y - r);
+        context.lineTo(markerX + r, y);
+        context.lineTo(markerX, y + r);
+        context.lineTo(markerX - r, y);
+        context.closePath();
+        context.fillStyle = segment.markerColor ?? '#E9C46A';
+        context.fill();
+        context.lineWidth = 1;
+        context.strokeStyle = TOUCH_FILL;
+        context.stroke();
+      }
       for (const { segment, y, touchX, text, labelX } of placed) {
         if (touchX !== null) {
           context.beginPath();
@@ -417,7 +433,8 @@ export class SessionLevelsPrimitive implements ISeriesPrimitive<Time> {
       if (startX === null || endX === null || y === null) continue;
       const touchTime = firstTouchTime(segment, candles);
       const touchX = touchTime === null ? null : this.timeToX(touchTime);
-      drawables.push({ segment, startX, endX, y, touchX });
+      const markerX = segment.markerTime != null ? this.timeToX(segment.markerTime) : null;
+      drawables.push({ segment, startX, endX, y, touchX, markerX: markerX === null ? null : Number(markerX) });
     }
     return drawables.length > 0 ? new SessionLevelsRenderer(drawables, this.precision) : null;
   }

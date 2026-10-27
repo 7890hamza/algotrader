@@ -25,6 +25,9 @@ export interface SessionLevelSegment {
    * while the session is still live, so its full window is visible.
    */
   sessionEndTime: number | null;
+  /** Epoch seconds of a diamond drawn on the line (e.g. price came back to it), or null. */
+  markerTime?: number | null;
+  markerColor?: string;
 }
 
 export interface SessionLevelOptions {
@@ -99,6 +102,9 @@ export function buildSessionLevelSegments(
     const showPrice = output.showPrice === true;
     // extend: false keeps the line to its own bars (it doesn't start at the session open).
     const toSessionEnd = output.extend !== false;
+    // markerFrom names an output holding epoch ms; a diamond goes on the line at that time.
+    const markerKey = typeof output.markerFrom === 'string' ? output.markerFrom : null;
+    const markerColor = typeof output.markerColor === 'string' ? output.markerColor : undefined;
     let current: SessionLevelSegment | null = null;
 
     const close = (): void => {
@@ -114,9 +120,12 @@ export function buildSessionLevelSegments(
         continue;
       }
 
+      const markerMs = markerKey ? sorted[i][markerKey] : null;
+      const markerTime = typeof markerMs === 'number' && Number.isFinite(markerMs) ? Math.floor(markerMs / 1000) : null;
       const seg = current as SessionLevelSegment | null;
       if (seg && Math.abs(seg.price - value) <= PRICE_EPSILON && time - seg.endTime <= maxGap) {
         seg.endTime = time;
+        if (markerTime !== null) seg.markerTime = markerTime;
         continue;
       }
 
@@ -133,6 +142,8 @@ export function buildSessionLevelSegments(
         touch,
         labelColor,
         showPrice,
+        markerTime,
+        markerColor,
         sessionEndTime: toSessionEnd && sessionSeconds && sessionSeconds > bar ? time + sessionSeconds - bar : null,
       };
     }

@@ -55,7 +55,12 @@ def _am_tbr_metadata() -> dict:
         "follow": ("Follow-through", "#E9C46A"),
     }
     outputs = {
-        "open": level("TBR Open", SDEV_OPEN_COLOR),
+        # A diamond marks where price came back to TBR Open after the first touch.
+        "open": {
+            **level("TBR Open", SDEV_OPEN_COLOR),
+            "markerFrom": "revert_at",
+            "markerColor": "#F2D16B",
+        },
         "+0.25": level("TBR +0.25", SDEV_LEVEL_COLOR, "high"),
         "-0.25": level("TBR -0.25", SDEV_LEVEL_COLOR, "low"),
     }
