@@ -443,6 +443,10 @@ export interface SessionTag {
   lines: string[];
   /** reached = the lean played out, missed = it didn't, none = P1/P2. */
   result: 'reached' | 'missed' | 'none';
+  /** Chip text and colors instead of "P<pattern>" (e.g. "+0.25 · 81%"). */
+  chipText?: string;
+  chipBg?: string;
+  chipFg?: string;
 }
 
 const SESSION_LOOKBACK_SECONDS = 13 * 3600;
@@ -513,4 +517,130 @@ export function buildSessionTags(
       result,
     };
   });
+}
+
+
+/** Where one TBR session's values live in the indicator's points. */
+export interface TbrTagSpec {
+  /** Prefix for the date, e.g. "London"; empty for a single-session indicator. */
+  label: string;
+  openKey: string;
+  /** Any zone edge that appears at the first touch (e.g. "stretch_near"). */
+  touchKey: string;
+  revertKey: string;
+  /** Price outputs whose highest value the tag sits above. */
+  priceKeys: string[];
+  /** The touched line (+0.25 / -0.25) and the zone edges, for the MAE / MFE lines of the recap. */
+  upKey: string;
+  dnKey: string;
+  zoneKey: (zone: 'stretch' | 'follow', edge: 'near' | 'far') => string;
+  /** "side,hour" (hour since the session open, side 1 / -1) -> [came back %, touched sessions]. */
+  rates: Record<string, [number, number]>;
+  /** Chip color; defaults to green for +0.25 and red for -0.25. */
+  color?: string;
+}
+
+const FEW_DAYS = 30;
+
+function rgba(hex: string, alpha: number): string {
+  const m = /^#([0-9a-f]{6})$/i.exec(hex);
+  if (!m) return hex;
+  const n = parseInt(m[1], 16);
+  return `rgba(${(n >> 16) & 255}, ${(n >> 8) & 255}, ${n & 255}, ${alpha})`;
+}
+
+/**
+ * One tag per TBR session: which line was touched first, how often sessions like that
+ * came back to the open (by side and hour of the touch), and whether this one did.
+ */
+export function buildTbrTags(
+  points: readonly IndicatorDataPoint[],
+  specs: readonly TbrTagSpec[],
+  timeZone: string,
+): SessionTag[] {
+  const sorted = sortedPoints(points);
+  const clock = (ms: number): string => formatClock(ms, timeZone);
+  const tags: SessionTag[] = [];
+  for (const spec of specs) {
+    const runs: IndicatorDataPoint[][] = [];
+    let run: IndicatorDataPoint[] = [];
+    for (const point of sorted) {
+      const open = num(point, spec.openKey);
+      const prev = run[run.length - 1];
+      if (open === null || (prev && num(prev, spec.openKey) !== open)) {
+        if (run.length) runs.push(run);
+        run = [];
+      }
+      if (open !== null) run.push(point);
+    }
+    if (run.length) runs.push(run);
+
+    runs.forEach((session, index) => {
+      const first = session[0];
+      const last = session[session.length - 1];
+      const open = num(first, spec.openKey)!;
+      const startMs = Number(first.timestamp_ms);
+      const touch = session.find((p) => num(p, spec.touchKey) !== null) ?? null;
+      const live = index === runs.length - 1 && last === sorted[sorted.length - 1];
+      const revertMs = num(last, spec.revertKey);
+      let top = -Infinity;
+      for (const p of session) for (const k of spec.priceKeys) { const v = num(p, k); if (v !== null && v > top) top = v; }
+      const date = new Date(startMs).toLocaleDateString('en-US', { month: '2-digit', day: '2-digit', timeZone });
+      const tag: SessionTag = {
+        id: `tbr-${spec.openKey}@${startMs}`,
+        startTime: Math.floor(startMs / 1000),
+        endTime: Math.floor(Number(last.timestamp_ms) / 1000),
+        top: Number.isFinite(top) ? top : open,
+        date: spec.label ? `${spec.label} ${date}` : date,
+        pattern: 2,
+        lines: [],
+        result: 'none',
+      };
+      if (!touch) {
+        tag.chipText = live ? 'waiting' : 'no touch';
+        tag.lines = [live ? 'Neither 0.25 line touched yet.' : 'Neither 0.25 line was touched.'];
+        tags.push(tag);
+        return;
+      }
+      const side = num(touch, spec.touchKey)! > open ? 1 : -1;
+      const sign = side > 0 ? '+' : '-';
+      const touchMs = Number(touch.timestamp_ms);
+      const hour = Math.floor((touchMs - startMs) / 3_600_000);
+      const rate = spec.rates[`${side},${hour}`];
+      const color = spec.color ?? (side > 0 ? '#3fb950' : '#e0574a');
+      tag.chipText = rate ? `${sign}0.25 · ${Math.round(rate[0])}%` : `${sign}0.25`;
+      tag.chipBg = rgba(color, 0.25);
+      tag.chipFg = color;
+      const hourWord = hour === 0 ? 'first hour' : `hour ${hour + 1}`;
+      tag.lines = [
+        `Touched ${sign}0.25 at ${clock(touchMs)} (${hourWord} of the session)`,
+        rate
+          ? `Sessions like this came back to the open ${rate[0].toFixed(1)}% (${rate[1].toLocaleString()} sessions)${rate[1] < FEW_DAYS ? ' · few sessions, take lightly' : ''}`
+          : 'No past sessions touched this late',
+      ];
+      const line = num(touch, side > 0 ? spec.upKey : spec.dnKey);
+      const sNear = num(touch, spec.zoneKey('stretch', 'near'));
+      const sFar = num(touch, spec.zoneKey('stretch', 'far'));
+      const fNear = num(touch, spec.zoneKey('follow', 'near'));
+      const fFar = num(touch, spec.zoneKey('follow', 'far'));
+      const pts = (a: number, b: number): string => `${Math.abs(a - b).toFixed(2)} pts`;
+      if (line !== null && sNear !== null && sFar !== null) {
+        tag.lines.push(`MAE (stretch past the line first): half of days ${formatPrice(sNear)} (${pts(sNear, line)}), 9 in 10 ${formatPrice(sFar)} (${pts(sFar, line)})`);
+      }
+      if (fNear !== null && fFar !== null) {
+        tag.lines.push(`MFE (past the open after coming back): half of days ${formatPrice(fNear)} (${pts(fNear, open)}), 9 in 10 ${formatPrice(fFar)} (${pts(fFar, open)})`);
+      }
+      if (revertMs !== null) {
+        tag.result = 'reached';
+        tag.lines.push(`Came back to the open at ${clock(revertMs)}`);
+      } else if (live) {
+        tag.lines.push('Watching for the return to the open');
+      } else {
+        tag.result = 'missed';
+        tag.lines.push('Did not come back to the open');
+      }
+      tags.push(tag);
+    });
+  }
+  return tags;
 }

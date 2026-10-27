@@ -5,6 +5,8 @@ import {
   buildAlnGuideLines,
   buildSessionBoxes,
   buildSessionTags,
+  buildTbrTags,
+  type TbrTagSpec,
   readGuideConfig,
   type SessionBox,
   type SessionTag,
@@ -77,6 +79,32 @@ function drawsOnPrice(info: IndicatorInfo): boolean {
     Object.values(info.outputs).some((output) => output.type === 'box') ||
     readGuideConfig(info.guide) !== null
   );
+}
+
+type Rates = Record<string, [number, number]>;
+const ZONE_PRICE_KEYS = ['stretch_near', 'stretch_far', 'runaway_near', 'runaway_far', 'follow_near', 'follow_far'];
+
+/** TBR tag specs from an indicator's guide: AM TBR ("tbr_am") or ALN TBR ("tbr"). */
+function tbrTagSpecs(guide: JsonObject | undefined, parameters: Record<string, { value?: unknown; default?: unknown }>): TbrTagSpec[] {
+  if (!guide) return [];
+  if (guide.kind === 'tbr_am' && guide.rates) {
+    return [{
+      label: '', openKey: 'open', touchKey: 'stretch_near', revertKey: 'revert_at',
+      upKey: '+0.25', dnKey: '-0.25', zoneKey: (zone, edge) => `${zone}_${edge}`,
+      priceKeys: ['open', '+0.25', '-0.25', ...ZONE_PRICE_KEYS], rates: guide.rates as unknown as Rates,
+    }];
+  }
+  if (guide.kind !== 'tbr' || !Array.isArray(guide.sessions)) return [];
+  const raw = parameters.sessions?.value ?? parameters.sessions?.default;
+  const chosen = String(raw ?? '').toLowerCase().split(/[,;]/).map((x) => x.trim()).filter(Boolean);
+  return (guide.sessions as unknown as { key: string; label: string; color: string; rates?: Rates }[])
+    .filter((s) => s.rates && (chosen.length === 0 || chosen.includes(s.key)))
+    .map((s) => ({
+      label: s.label, openKey: `${s.key}_open`, touchKey: `${s.key}_stretch_near`, revertKey: `${s.key}_revert_at`,
+      upKey: `${s.key}_up`, dnKey: `${s.key}_dn`, zoneKey: (zone, edge) => `${s.key}_${zone}_${edge}`,
+      priceKeys: [`${s.key}_open`, `${s.key}_up`, `${s.key}_dn`, ...ZONE_PRICE_KEYS.map((k) => `${s.key}_${k}`)],
+      rates: s.rates!, color: s.color,
+    }));
 }
 
 function toChartSeriesOptions(options: JsonObject | undefined): ChartSeriesOptions {
@@ -167,7 +195,10 @@ export class IndicatorManager {
     const guide = readGuideConfig(indicator.info.guide);
     if (guide) segments.push(...buildAlnGuideLines(points, guide));
     const boxes = buildSessionBoxes(points, indicator.info.outputs);
-    const tags = guide ? buildSessionTags(points, boxes, DEFAULT_CHART_TIME_ZONE) : [];
+    const tbr = tbrTagSpecs(indicator.info.guide, indicator.parameters);
+    const tags = guide
+      ? buildSessionTags(points, boxes, DEFAULT_CHART_TIME_ZONE)
+      : tbr.length ? buildTbrTags(points, tbr, DEFAULT_CHART_TIME_ZONE) : [];
     this.chartManager.setSessionLevels(id, PRICE_SERIES_KEY, segments, undefined, boxes, tags);
   }
 

@@ -117,10 +117,12 @@ class SessionTagsRenderer implements IPrimitivePaneRenderer {
       ctx.textBaseline = 'middle';
       const chipH = 18;
       for (const { tag, centerX, y, hovered } of this.tags) {
-        const [bg, fg] = TAG_COLORS[tag.pattern] ?? TAG_COLORS[1];
+        const [patternBg, patternFg] = TAG_COLORS[tag.pattern] ?? TAG_COLORS[1];
+        const bg = tag.chipBg ?? patternBg;
+        const fg = tag.chipFg ?? patternFg;
         ctx.font = TAG_FONT;
         const date = tag.date;
-        const chip = `P${tag.pattern}`;
+        const chip = tag.chipText ?? `P${tag.pattern}`;
         const mark = tag.result === 'reached' ? ' ✓' : tag.result === 'missed' ? ' ✕' : '';
         const dateW = ctx.measureText(`${date} `).width;
         const chipW = ctx.measureText(chip).width + 10;

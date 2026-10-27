@@ -80,7 +80,79 @@ def _am_tbr_metadata() -> dict:
             "extend": False,
             "plotOptions": {"lineWidth": 1, "lineStyle": 2, "color": color},
         }
-    return {"overlay": True, "outputs": outputs}
+    guide = {"kind": "tbr_am", "source": "ES 2016-2025", "rates": TBR_RATES["am"]}
+    return {"overlay": True, "outputs": outputs, "guide": guide}
+
+
+# Came back % and touched sessions by "side,hour since the session open" (side 1 = +0.25).
+TBR_RATES: dict[str, dict[str, list[float]]] = {
+    "asia": {
+        "1,0": [75.8, 1019],
+        "1,1": [68.2, 88],
+        "1,2": [38.9, 18],
+        "1,3": [26.7, 15],
+        "1,4": [28.6, 7],
+        "1,5": [0.0, 2],
+        "-1,0": [80.3, 1100],
+        "-1,1": [55.6, 81],
+        "-1,2": [50.0, 22],
+        "-1,3": [57.1, 7],
+        "-1,4": [0.0, 3],
+        "-1,5": [0.0, 4],
+    },
+    "ldn": {
+        "1,0": [77.8, 911],
+        "1,1": [73.9, 272],
+        "1,2": [67.7, 31],
+        "1,3": [80.0, 5],
+        "1,4": [14.3, 7],
+        "1,5": [0.0, 5],
+        "-1,0": [81.1, 903],
+        "-1,1": [75.6, 225],
+        "-1,2": [52.2, 23],
+        "-1,3": [50.0, 8],
+        "-1,4": [0.0, 2],
+        "-1,5": [25.0, 4],
+    },
+    "am": {
+        "1,0": [80.8, 797],
+        "1,1": [67.9, 355],
+        "1,2": [57.5, 40],
+        "1,3": [0.0, 6],
+        "-1,0": [80.7, 844],
+        "-1,1": [67.6, 343],
+        "-1,2": [37.5, 32],
+        "-1,3": [0.0, 2],
+    },
+    "pm": {
+        "1,0": [75.3, 985],
+        "1,1": [61.9, 134],
+        "1,2": [41.7, 48],
+        "1,3": [16.0, 25],
+        "-1,0": [81.0, 1021],
+        "-1,1": [64.8, 105],
+        "-1,2": [68.6, 35],
+        "-1,3": [30.0, 10],
+    },
+    "ny": {
+        "1,0": [78.9, 558],
+        "1,1": [70.2, 486],
+        "1,2": [68.2, 88],
+        "1,3": [40.0, 20],
+        "1,4": [40.0, 10],
+        "1,5": [25.0, 4],
+        "1,6": [14.3, 7],
+        "1,7": [0.0, 1],
+        "-1,0": [81.3, 594],
+        "-1,1": [73.1, 484],
+        "-1,2": [61.7, 81],
+        "-1,3": [60.0, 10],
+        "-1,4": [85.7, 7],
+        "-1,5": [50.0, 4],
+        "-1,6": [62.5, 8],
+        "-1,7": [0.0, 4],
+    },
+}
 
 
 # ES 2016-2025 open fade by session: share of first +/-0.25 SDEV touches that came back
@@ -142,7 +214,15 @@ def _aln_tbr_metadata() -> dict:
         "kind": "tbr",
         "source": "ES 2016-2025",
         "sessions": [
-            {"key": k, "label": lab, "color": col, "window": win, "cameBack": pct, "touched": n}
+            {
+                "key": k,
+                "label": lab,
+                "color": col,
+                "window": win,
+                "cameBack": pct,
+                "touched": n,
+                "rates": TBR_RATES[k],
+            }
             for k, lab, col, win, pct, n in ALN_TBR_SESSIONS
         ],
     }
@@ -192,7 +272,7 @@ ALN_STATS = {
         "high_first": 54.0,
         "low_first": 43.6,
         "low_after_high_first": 38.4,
-        "high_after_low_first": 40.8
+        "high_after_low_first": 40.8,
     },
     "P2": {
         "n": 129,
@@ -204,7 +284,7 @@ ALN_STATS = {
         "high_first": 51.9,
         "low_first": 46.5,
         "low_after_high_first": 41.8,
-        "high_after_low_first": 58.3
+        "high_after_low_first": 58.3,
     },
     "P3": {
         "n": 932,
@@ -216,7 +296,7 @@ ALN_STATS = {
         "high_first": 62.9,
         "low_first": 36.2,
         "low_after_high_first": 43.3,
-        "high_after_low_first": 44.2
+        "high_after_low_first": 44.2,
     },
     "P4": {
         "n": 739,
@@ -228,8 +308,8 @@ ALN_STATS = {
         "high_first": 44.1,
         "low_first": 54.3,
         "low_after_high_first": 43.9,
-        "high_after_low_first": 42.1
-    }
+        "high_after_low_first": 42.1,
+    },
 }
 
 
@@ -245,8 +325,18 @@ def _aln_metadata() -> dict:
                 "label": label,
                 "plotOptions": {"color": color, "lineWidth": 1},
             }
-    for name in ("ref_asia_high", "ref_asia_low", "ref_london_high", "ref_london_low", "pattern",
-                 "ny_open", "sdev_pts", "up_at", "dn_at", *[f"recent_{k}" for k in range(1, 9)]):
+    for name in (
+        "ref_asia_high",
+        "ref_asia_low",
+        "ref_london_high",
+        "ref_london_low",
+        "pattern",
+        "ny_open",
+        "sdev_pts",
+        "up_at",
+        "dn_at",
+        *[f"recent_{k}" for k in range(1, 9)],
+    ):
         outputs[name] = {"type": "data"}
     return {
         "overlay": True,
