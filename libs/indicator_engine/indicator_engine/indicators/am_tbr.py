@@ -12,6 +12,9 @@ from the ES 2016-2025 study (1-minute AMP data), for the hour of the touch:
 * runaway  - how far it ran by 12:00 on days it never came back
 * follow   - how far it kept going past TBR Open, on the other side, after coming back
 
+``stretch_now`` is the furthest price past the touched line so far (until the return to
+TBR Open), ``follow_now`` the furthest price past TBR Open after the return.
+
 Other outputs: ``touch_side`` (+1 / -1), ``touch_at`` and ``revert_at`` (epoch ms of the
 first touch and of the first trade back at TBR Open after it).
 """
@@ -40,9 +43,11 @@ from .session_sdev import (
 )
 
 ZONES = ("stretch", "runaway", "follow")
-OUTPUTS = ["open", "+0.25", "-0.25", "touch_side", "touch_at", "revert_at"] + [
-    f"{z}_{e}" for z in ZONES for e in ("near", "far", "mid")
-]
+OUTPUTS = (
+    ["open", "+0.25", "-0.25", "touch_side", "touch_at", "revert_at"]
+    + [f"{z}_{e}" for z in ZONES for e in ("near", "far", "mid")]
+    + ["stretch_now", "follow_now"]
+)
 COL = {name: i for i, name in enumerate(OUTPUTS)}
 
 # (median, p75, p90) in SDEV, by touched side and New York hour of the touch.
@@ -116,9 +121,20 @@ def am_tbr(
         out[after, COL["touch_side"]] = side
         out[after, COL["touch_at"]] = epoch_ms[r[k]]
         back = (low[r[k + 1 :]] <= o) if side == 1 else (high[r[k + 1 :]] >= o)
-        if back.any():
-            j = k + 1 + int(np.argmax(back))
+        j = k + 1 + int(np.argmax(back)) if back.any() else None
+        if j is not None:
             out[r[j:], COL["revert_at"]] = epoch_ms[r[j]]
+        # Furthest price so far past the line (until the return) and past the open (after it).
+        stop = len(r) if j is None else j + 1
+        seg = r[k:stop]
+        out[seg, COL["stretch_now"]] = (
+            np.maximum.accumulate(high[seg]) if side == 1 else np.minimum.accumulate(low[seg])
+        )
+        if j is not None:
+            tail = r[j:]
+            out[tail, COL["follow_now"]] = (
+                np.minimum.accumulate(low[tail]) if side == 1 else np.maximum.accumulate(high[tail])
+            )
         stats = ZONE_STATS[(side, min(max(int(ny_hour[r[k]]), 8), 9))]
         for zone, (med, p75, p90) in stats.items():
             direction = -side if zone == "follow" else side

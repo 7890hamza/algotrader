@@ -47,6 +47,7 @@
 
     <aln-guide-overlay :time-zone="chartTimeZone" />
     <tbr-stats-overlay />
+    <am-tbr-guide-overlay :time-zone="chartTimeZone" />
 
     <div>
       <indicator
@@ -113,6 +114,7 @@ import { displayTimeZoneForTimeframe } from "@/utils/chart/chartTimeZone";
 import Indicator from "@/components/Chart/Indicator/Indicator.vue";
 import AlnGuideOverlay from "@/components/Chart/AlnGuideOverlay.vue";
 import TbrStatsOverlay from "@/components/Chart/TbrStatsOverlay.vue";
+import AmTbrGuideOverlay from "@/components/Chart/AmTbrGuideOverlay.vue";
 import { CloseCircleOutline } from "@/icons";
 
 const WHEEL_SETTLE_MS = 250;
@@ -188,6 +190,7 @@ export default defineComponent({
   components: {
     AlnGuideOverlay,
     TbrStatsOverlay,
+    AmTbrGuideOverlay,
     CloseCircleOutline,
     Indicator,
     NButton,
