@@ -1,4 +1,5 @@
 from .aln_sessions import AlnSessions
+from .aln_tbr import AlnTBR
 from .am_tbr import AmTBR
 from .base import IndicatorBase
 from .bbands import BBANDS
@@ -21,4 +22,5 @@ __all__ = [
     "AlnSessions",
     "CurrentDayOHL",
     "AmTBR",
+    "AlnTBR",
 ]

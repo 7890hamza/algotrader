@@ -83,6 +83,72 @@ def _am_tbr_metadata() -> dict:
     return {"overlay": True, "outputs": outputs}
 
 
+# ES 2016-2025 open fade by session: share of first +/-0.25 SDEV touches that came back
+# to the session open before the session ended, and how many sessions were touched.
+ALN_TBR_SESSIONS = [
+    # key, label, color, window (Pacific), came back %, touched sessions
+    ("asia", "Asia", "#E0574A", "5-11 PM", 75.6, 2366),
+    ("ldn", "London", "#5B7CFA", "11 PM-5 AM", 77.4, 2396),
+    ("am", "AM", "#3FB950", "5-9 AM", 75.8, 2419),
+    ("pm", "PM", "#26A69A", "9 AM-1 PM", 74.9, 2363),
+    ("ny", "NY", "#2E9E57", "5 AM-1 PM", 74.4, 2366),
+]
+
+
+def _aln_tbr_metadata() -> dict:
+    """Open, +/- 0.25 and zones per ALN session, each in its session color."""
+    zones = (
+        ("stretch", "stretch", 0.16),
+        ("runaway", "no return", 0.07),
+        ("follow", "follow-through", 0.11),
+    )
+    outputs: dict[str, dict] = {}
+    for key, label, color, _, _, _ in ALN_TBR_SESSIONS:
+        outputs[f"{key}_open"] = {
+            "type": "level",
+            "label": f"{label} Open",
+            "labelColor": SDEV_LABEL_COLOR,
+            "showPrice": True,
+            "markerFrom": f"{key}_revert_at",
+            "markerColor": "#F2D16B",
+            "plotOptions": {"lineWidth": 1, "lineStyle": 0, "color": color},
+        }
+        for side, sign, touch in (("up", "+", "high"), ("dn", "-", "low")):
+            outputs[f"{key}_{side}"] = {
+                "type": "level",
+                "label": f"{label} {sign}0.25",
+                "labelColor": SDEV_LABEL_COLOR,
+                "showPrice": True,
+                "touch": touch,
+                "plotOptions": {"lineWidth": 1, "lineStyle": DOTTED, "color": color},
+            }
+        for zone, words, opacity in zones:
+            for edge, share in (("near", "half of days"), ("far", "9 in 10 days")):
+                outputs[f"{key}_{zone}_{edge}"] = {
+                    "type": "box",
+                    "box": f"{key}_{zone}",
+                    "edge": edge,
+                    "label": f"{label} {words}",
+                    "edgeLabel": f"{label} {words} · {share}",
+                    "plotOptions": {"color": color, "fillOpacity": opacity},
+                }
+            outputs[f"{key}_{zone}_mid"] = {
+                "type": "level",
+                "label": "",
+                "extend": False,
+                "plotOptions": {"lineWidth": 1, "lineStyle": 2, "color": color},
+            }
+    guide = {
+        "kind": "tbr",
+        "source": "ES 2016-2025",
+        "sessions": [
+            {"key": k, "label": lab, "color": col, "window": win, "cameBack": pct, "touched": n}
+            for k, lab, col, win, pct, n in ALN_TBR_SESSIONS
+        ],
+    }
+    return {"overlay": True, "outputs": outputs, "guide": guide}
+
+
 def _current_day_ohl_metadata() -> dict:
     """Three step lines like NinjaTrader's CurrentDayOHL: dashed open, green high, red low.
 
@@ -276,4 +342,5 @@ UI_METADATA: dict[str, dict] = {
     "aln_sessions": _aln_metadata(),
     "current_day_ohl": _current_day_ohl_metadata(),
     "am_tbr": _am_tbr_metadata(),
+    "aln_tbr": _aln_tbr_metadata(),
 }
