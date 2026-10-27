@@ -97,6 +97,8 @@ export function buildSessionLevelSegments(
     const touch = output.touch === 'high' || output.touch === 'low' ? output.touch : null;
     const labelColor = typeof output.labelColor === 'string' ? output.labelColor : DEFAULT_LABEL_COLOR;
     const showPrice = output.showPrice === true;
+    // extend: false keeps the line to its own bars (it doesn't start at the session open).
+    const toSessionEnd = output.extend !== false;
     let current: SessionLevelSegment | null = null;
 
     const close = (): void => {
@@ -131,7 +133,7 @@ export function buildSessionLevelSegments(
         touch,
         labelColor,
         showPrice,
-        sessionEndTime: sessionSeconds && sessionSeconds > bar ? time + sessionSeconds - bar : null,
+        sessionEndTime: toSessionEnd && sessionSeconds && sessionSeconds > bar ? time + sessionSeconds - bar : null,
       };
     }
     close();

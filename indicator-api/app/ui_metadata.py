@@ -48,14 +48,34 @@ def _am_tbr_metadata() -> dict:
             out["touch"] = touch
         return out
 
-    return {
-        "overlay": True,
-        "outputs": {
-            "open": level("TBR Open", SDEV_OPEN_COLOR),
-            "+0.25": level("TBR +0.25", SDEV_LEVEL_COLOR, "high"),
-            "-0.25": level("TBR -0.25", SDEV_LEVEL_COLOR, "low"),
-        },
+    zones = {
+        # name: (box title, color)
+        "stretch": ("Stretch", "#3FB950"),
+        "runaway": ("No return", "#E0574A"),
+        "follow": ("Follow-through", "#E9C46A"),
     }
+    outputs = {
+        "open": level("TBR Open", SDEV_OPEN_COLOR),
+        "+0.25": level("TBR +0.25", SDEV_LEVEL_COLOR, "high"),
+        "-0.25": level("TBR -0.25", SDEV_LEVEL_COLOR, "low"),
+    }
+    for key, (title, color) in zones.items():
+        for edge, words in (("near", "half of days"), ("far", "9 in 10 days")):
+            outputs[f"{key}_{edge}"] = {
+                "type": "box",
+                "box": f"tbr_{key}",
+                "edge": edge,
+                "label": title,
+                "edgeLabel": f"{title} · {words}",
+                "plotOptions": {"color": color, "fillOpacity": 0.16},
+            }
+        outputs[f"{key}_mid"] = {
+            "type": "level",
+            "label": "",
+            "extend": False,
+            "plotOptions": {"lineWidth": 1, "lineStyle": 2, "color": color},
+        }
+    return {"overlay": True, "outputs": outputs}
 
 
 def _current_day_ohl_metadata() -> dict:

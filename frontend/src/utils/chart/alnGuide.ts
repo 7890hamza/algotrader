@@ -12,6 +12,11 @@ export interface SessionBox {
   low: number;
   color: string;
   label: string;
+  /** Text for the top / bottom edge instead of "<label> H" / "<label> L". */
+  highLabel?: string;
+  lowLabel?: string;
+  /** Fill opacity, 0-1 (default 0.07). */
+  fillOpacity?: number;
 }
 
 export interface AlnPatternStats {
@@ -126,31 +131,40 @@ export function buildSessionBoxes(
 ): SessionBox[] {
   const sorted = sortedPoints(points);
   const maxGap = barSeconds(sorted) * MAX_GAP_BARS;
-  const groups = new Map<string, { high?: string; low?: string; color: string; label: string }>();
+  interface Edge { key: string; label?: string }
+  interface Group { edges: Edge[]; color: string; label: string; fillOpacity?: number }
+  const groups = new Map<string, Group>();
   for (const [key, output] of Object.entries(outputs)) {
     if (output.type !== 'box' || typeof output.box !== 'string') continue;
+    const opacity = output.plotOptions?.fillOpacity;
     const group = groups.get(output.box) ?? {
+      edges: [],
       color: typeof output.plotOptions?.color === 'string' ? output.plotOptions.color : '#9aa4b2',
       label: typeof output.label === 'string' ? output.label : output.box,
+      fillOpacity: typeof opacity === 'number' ? opacity : undefined,
     };
-    if (output.edge === 'high') group.high = key;
-    if (output.edge === 'low') group.low = key;
+    // Edges are "high"/"low" (fixed) or any two names (e.g. "near"/"far"), sorted by price per bar.
+    group.edges.push({ key, label: typeof output.edgeLabel === 'string' ? output.edgeLabel : undefined });
     groups.set(output.box, group);
   }
 
   const boxes: SessionBox[] = [];
   for (const [name, group] of groups) {
-    if (!group.high || !group.low) continue;
+    if (group.edges.length !== 2) continue;
+    const [a, b] = group.edges;
     let current: SessionBox | null = null;
     for (const point of sorted) {
-      const high = num(point, group.high);
-      const low = num(point, group.low);
+      const va = num(point, a.key);
+      const vb = num(point, b.key);
       const time = Math.floor(Number(point.timestamp_ms) / 1000);
-      if (high === null || low === null) {
+      if (va === null || vb === null) {
         if (current) boxes.push(current);
         current = null;
         continue;
       }
+      const [top, bottom] = va >= vb ? [a, b] : [b, a];
+      const high = Math.max(va, vb);
+      const low = Math.min(va, vb);
       // Running ranges only widen inside one session; a narrower range or a long gap starts a new box.
       if (current && time - current.endTime <= maxGap && high >= current.high && low <= current.low) {
         current.endTime = time;
@@ -159,7 +173,10 @@ export function buildSessionBoxes(
         continue;
       }
       if (current) boxes.push(current);
-      current = { id: `${name}@${time}`, startTime: time, endTime: time, high, low, color: group.color, label: group.label };
+      current = {
+        id: `${name}@${time}`, startTime: time, endTime: time, high, low, color: group.color, label: group.label,
+        highLabel: top.label, lowLabel: bottom.label, fillOpacity: group.fillOpacity,
+      };
     }
     if (current) boxes.push(current);
   }

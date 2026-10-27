@@ -209,11 +209,10 @@ class SessionOptionsTests(unittest.TestCase):
 
 class AmTbrTests(unittest.TestCase):
     def test_am_tbr_uses_sample_sdev_and_quarter_levels(self) -> None:
-        from indicator_engine.indicators.session_sdev import AmTBR
+        from indicator_engine.indicators.am_tbr import AmTBR
 
         spec = AmTBR().spec
         self.assertEqual(spec.id, "am_tbr")
-        self.assertEqual(spec.parameters["levels"]["default"], "0.25")
         self.assertEqual(spec.parameters["ddof"]["default"], 1)
         self.assertIn("am_tbr", get_registry().list_specs())
 

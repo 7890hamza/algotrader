@@ -59,7 +59,7 @@ class SessionBoxesRenderer implements IPrimitivePaneRenderer {
         for (const { box, left, right, top, bottom } of this.boxes) {
           const width = Math.max(1, right - left);
           const height = Math.max(1, bottom - top);
-          context.fillStyle = withAlpha(box.color, BOX_FILL_ALPHA);
+          context.fillStyle = withAlpha(box.color, box.fillOpacity ?? BOX_FILL_ALPHA);
           context.fillRect(left, top, width, height);
           context.strokeStyle = withAlpha(box.color, 0.75);
           context.lineWidth = 1;
@@ -71,9 +71,9 @@ class SessionBoxesRenderer implements IPrimitivePaneRenderer {
           if (right - left < 40) continue;
           context.fillStyle = box.color;
           context.textBaseline = 'bottom';
-          context.fillText(`${box.label} H ${formatLevelPrice(box.high, this.precision)}`, left + 4, top - 3);
+          context.fillText(`${box.highLabel ?? `${box.label} H`} ${formatLevelPrice(box.high, this.precision)}`, left + 4, top - 3);
           context.textBaseline = 'top';
-          context.fillText(`${box.label} L ${formatLevelPrice(box.low, this.precision)}`, left + 4, bottom + 3);
+          context.fillText(`${box.lowLabel ?? `${box.label} L`} ${formatLevelPrice(box.low, this.precision)}`, left + 4, bottom + 3);
         }
       }
       context.restore();

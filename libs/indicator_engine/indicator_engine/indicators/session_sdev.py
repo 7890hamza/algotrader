@@ -292,27 +292,3 @@ class CmeOpenSDEV(SessionSDEV):
         ),
         parameters=_parameters("15:00", "19:00", "Sun-Thu"),
     )
-
-
-class AmTBR(SessionSDEV):
-    """AM Time-Based Range (nqstats AM TBR): 08:00-12:00 New York, 5-9 AM Pacific.
-
-    TBR Open and +/- 0.25 SDEV, where 1 SDEV is the sample SDEV of the previous 20
-    sessions' % net change. Price usually comes back to TBR Open after the first
-    touch of either 0.25 line (ES 2016-2025: about 3 in 4 sessions).
-    """
-
-    spec = replace(
-        SessionSDEV.spec,
-        id="am_tbr",
-        name="AM TBR",
-        description=(
-            "AM Time-Based Range: TBR Open (8:00 New York) and +/- 0.25 SDEV from the "
-            "sample SDEV of the previous 20 sessions' net change."
-        ),
-        parameters={
-            **_parameters("05:00", "09:00", "Mon-Fri"),
-            "levels": {"type": "string", "default": "0.25"},
-            "ddof": {"type": "int", "default": 1, "min": 0, "max": 1},
-        },
-    )
