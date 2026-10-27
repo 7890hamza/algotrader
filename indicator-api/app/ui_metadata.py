@@ -50,22 +50,22 @@ def _am_tbr_metadata() -> dict:
 
     zones = {
         # name: (box title, color)
-        "stretch": ("Stretch", "#3FB950"),
-        "runaway": ("No return", "#E0574A"),
-        "follow": ("Follow-through", "#E9C46A"),
+        "stretch": ("Stretch (MAE)", "#3FB950"),
+        "runaway": ("No return (MAE)", "#E0574A"),
+        "follow": ("Follow-through (MFE)", "#E9C46A"),
     }
     outputs = {
         # A diamond marks where price came back to TBR Open after the first touch.
         "open": {
-            **level("TBR Open", SDEV_OPEN_COLOR),
+            **level("AM TBR Open", SDEV_OPEN_COLOR),
             "markerFrom": "revert_at",
             "markerColor": "#F2D16B",
         },
-        "+0.25": level("TBR +0.25", SDEV_LEVEL_COLOR, "high"),
-        "-0.25": level("TBR -0.25", SDEV_LEVEL_COLOR, "low"),
+        "+0.25": level("AM TBR +0.25", SDEV_LEVEL_COLOR, "high"),
+        "-0.25": level("AM TBR -0.25", SDEV_LEVEL_COLOR, "low"),
     }
     for key, (title, color) in zones.items():
-        for edge, words in (("near", "half of days"), ("far", "9 in 10 days")):
+        for edge, words in (("near", "median"), ("far", "P90")):
             outputs[f"{key}_{edge}"] = {
                 "type": "box",
                 "box": f"tbr_{key}",
@@ -76,7 +76,9 @@ def _am_tbr_metadata() -> dict:
             }
         outputs[f"{key}_mid"] = {
             "type": "level",
-            "label": "",
+            "label": f"{title} · P75",
+            "labelColor": color,
+            "showPrice": True,
             "extend": False,
             "plotOptions": {"lineWidth": 1, "lineStyle": 2, "color": color},
         }
@@ -170,9 +172,9 @@ ALN_TBR_SESSIONS = [
 def _aln_tbr_metadata() -> dict:
     """Open, +/- 0.25 and zones per ALN session, each in its session color."""
     zones = (
-        ("stretch", "stretch", 0.16),
-        ("runaway", "no return", 0.07),
-        ("follow", "follow-through", 0.11),
+        ("stretch", "stretch (MAE)", 0.16),
+        ("runaway", "no return (MAE)", 0.07),
+        ("follow", "follow-through (MFE)", 0.11),
     )
     outputs: dict[str, dict] = {}
     for key, label, color, _, _, _ in ALN_TBR_SESSIONS:
@@ -195,7 +197,7 @@ def _aln_tbr_metadata() -> dict:
                 "plotOptions": {"lineWidth": 1, "lineStyle": DOTTED, "color": color},
             }
         for zone, words, opacity in zones:
-            for edge, share in (("near", "half of days"), ("far", "9 in 10 days")):
+            for edge, share in (("near", "median"), ("far", "P90")):
                 outputs[f"{key}_{zone}_{edge}"] = {
                     "type": "box",
                     "box": f"{key}_{zone}",
@@ -206,7 +208,9 @@ def _aln_tbr_metadata() -> dict:
                 }
             outputs[f"{key}_{zone}_mid"] = {
                 "type": "level",
-                "label": "",
+                "label": f"{label} {words} · P75",
+                "labelColor": color,
+                "showPrice": True,
                 "extend": False,
                 "plotOptions": {"lineWidth": 1, "lineStyle": 2, "color": color},
             }
