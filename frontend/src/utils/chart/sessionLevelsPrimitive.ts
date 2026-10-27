@@ -14,6 +14,7 @@ import type {
 } from 'lightweight-charts';
 
 import type { SessionBox, SessionTag } from './alnGuide';
+import { DEFAULT_CHART_TIME_ZONE } from './chartTimeZone';
 import {
   firstTouchTime,
   formatLevelPrice,
@@ -204,7 +205,12 @@ interface DrawableSegment {
   y: number;
   touchX: number | null;
   markerX: number | null;
+  touchTime: number | null;
 }
+
+const MARK_FONT = '600 11px -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif';
+const clockFormat = new Intl.DateTimeFormat('en-US', { hour: 'numeric', minute: '2-digit', timeZone: DEFAULT_CHART_TIME_ZONE });
+const clockOf = (epochSeconds: number): string => clockFormat.format(new Date(epochSeconds * 1000));
 
 function crisp(value: number): number {
   return Math.round(value) + 0.5;
@@ -268,8 +274,15 @@ class SessionLevelsRenderer implements IPrimitivePaneRenderer {
         context.lineWidth = 1;
         context.strokeStyle = TOUCH_FILL;
         context.stroke();
+        if (segment.markerText && segment.markerTime != null) {
+          context.font = MARK_FONT;
+          context.textBaseline = 'bottom';
+          context.fillText(`${segment.markerText} ${clockOf(segment.markerTime)}`, markerX + 7, y - 4);
+          context.font = LABEL_FONT;
+          context.textBaseline = 'middle';
+        }
       }
-      for (const { segment, y, touchX, text, labelX } of placed) {
+      for (const { segment, y, touchX, touchTime, text, labelX } of placed) {
         if (touchX !== null && segment.touchShape === 'arrow') {
           // Up-touch: arrow above the line pointing down at it; down-touch: below, pointing up.
           const dir = segment.touch === 'high' ? -1 : 1;
@@ -282,6 +295,13 @@ class SessionLevelsRenderer implements IPrimitivePaneRenderer {
           context.closePath();
           context.fillStyle = segment.touchColor ?? segment.color;
           context.fill();
+          if (segment.touchText && touchTime !== null) {
+            context.font = MARK_FONT;
+            context.textBaseline = dir < 0 ? 'bottom' : 'top';
+            context.fillText(`${segment.touchText} ${clockOf(touchTime)}`, touchX + 8, base);
+            context.font = LABEL_FONT;
+            context.textBaseline = 'middle';
+          }
         } else if (touchX !== null) {
           context.beginPath();
           context.arc(touchX, y, TOUCH_RADIUS_PX, 0, Math.PI * 2);
@@ -448,7 +468,7 @@ export class SessionLevelsPrimitive implements ISeriesPrimitive<Time> {
       const touchTime = firstTouchTime(segment, candles);
       const touchX = touchTime === null ? null : this.timeToX(touchTime);
       const markerX = segment.markerTime != null ? this.timeToX(segment.markerTime) : null;
-      drawables.push({ segment, startX, endX, y, touchX, markerX: markerX === null ? null : Number(markerX) });
+      drawables.push({ segment, startX, endX, y, touchX, touchTime, markerX: markerX === null ? null : Number(markerX) });
     }
     return drawables.length > 0 ? new SessionLevelsRenderer(drawables, this.precision) : null;
   }

@@ -60,18 +60,21 @@ def _am_tbr_metadata() -> dict:
             **level("AM TBR Open", SDEV_OPEN_COLOR),
             "markerFrom": "revert_at",
             "markerColor": "#F2D16B",
+            "markerText": "Back",
         },
         # An arrow marks the first touch, on the line touched first only.
         "+0.25": {
             **level("AM TBR +0.25", SDEV_LEVEL_COLOR, "high"),
             "touchWhen": {"key": "touch_side", "equals": 1},
             "touchShape": "arrow",
+            "touchText": "Hit",
             "touchColor": "#3FB950",
         },
         "-0.25": {
             **level("AM TBR -0.25", SDEV_LEVEL_COLOR, "low"),
             "touchWhen": {"key": "touch_side", "equals": -1},
             "touchShape": "arrow",
+            "touchText": "Hit",
             "touchColor": "#E0574A",
         },
     }
@@ -196,6 +199,7 @@ def _aln_tbr_metadata() -> dict:
             "showPrice": True,
             "markerFrom": f"{key}_revert_at",
             "markerColor": "#F2D16B",
+            "markerText": "Back",
             "plotOptions": {"lineWidth": 1, "lineStyle": 0, "color": color},
         }
         for side, sign, touch, value, arrow in (
@@ -210,6 +214,7 @@ def _aln_tbr_metadata() -> dict:
                 "touch": touch,
                 "touchWhen": {"key": f"{key}_side", "equals": value},
                 "touchShape": "arrow",
+                "touchText": "Hit",
                 "touchColor": arrow,
                 "plotOptions": {"lineWidth": 1, "lineStyle": DOTTED, "color": color},
             }

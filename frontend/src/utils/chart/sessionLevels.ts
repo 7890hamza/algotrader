@@ -31,6 +31,9 @@ export interface SessionLevelSegment {
   /** Draw the first touch as an arrow (in touchColor) instead of a circle. */
   touchShape?: 'circle' | 'arrow';
   touchColor?: string;
+  /** Text before the time beside the touch arrow ("Hit") and the diamond ("Back"). */
+  touchText?: string;
+  markerText?: string;
 }
 
 export interface SessionLevelOptions {
@@ -114,6 +117,8 @@ export function buildSessionLevelSegments(
     const whenKey = when && typeof when.key === 'string' ? when.key : null;
     const touchShape = output.touchShape === 'arrow' ? 'arrow' : undefined;
     const touchColor = typeof output.touchColor === 'string' ? output.touchColor : undefined;
+    const touchText = typeof output.touchText === 'string' ? output.touchText : undefined;
+    const markerText = typeof output.markerText === 'string' ? output.markerText : undefined;
     let current: SessionLevelSegment | null = null;
 
     const close = (): void => {
@@ -153,6 +158,8 @@ export function buildSessionLevelSegments(
         touch: whenKey === null || whenMet ? touch : null,
         touchShape,
         touchColor,
+        touchText,
+        markerText,
         labelColor,
         showPrice,
         markerTime,
