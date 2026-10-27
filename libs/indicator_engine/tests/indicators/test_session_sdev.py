@@ -205,3 +205,26 @@ class SessionOptionsTests(unittest.TestCase):
         self.assertEqual(spec.parameters["session_days"]["default"], "Sun-Thu")
         self.assertTrue(spec.sparse_outputs)
         self.assertIn("cme_open_sdev", get_registry().list_specs())
+
+
+class AmTbrTests(unittest.TestCase):
+    def test_am_tbr_uses_sample_sdev_and_quarter_levels(self) -> None:
+        from indicator_engine.indicators.session_sdev import AmTBR
+
+        spec = AmTBR().spec
+        self.assertEqual(spec.id, "am_tbr")
+        self.assertEqual(spec.parameters["levels"]["default"], "0.25")
+        self.assertEqual(spec.parameters["ddof"]["default"], 1)
+        self.assertIn("am_tbr", get_registry().list_specs())
+
+        days = weekdays(datetime(2026, 9, 1), 22)
+        rng = np.random.default_rng(3)
+        changes = rng.normal(0, 0.4, size=len(days))
+        sessions = [(d, 7000.0, 7000.0 * (1 + c / 100)) for d, c in zip(days, changes)]
+        times, opens, closes = build_sessions(sessions)
+        levels = session_levels(times, opens, closes, levels=(0.25,), ddof=1)
+        sigma = float(np.std(changes[:20], ddof=1))
+        row = levels[20 * 240]
+        expected = 7000.0 * (1 + 0.25 * sigma / 100)
+        self.assertAlmostEqual(row[OUTPUTS.index("+0.25")], expected, places=9)
+        self.assertTrue(np.isnan(row[OUTPUTS.index("+1")]))

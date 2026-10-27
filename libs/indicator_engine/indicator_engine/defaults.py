@@ -13,7 +13,7 @@ from .core.registry import IndicatorRegistry
 from .core.results import IndicatorResult
 from .engines.batch import BatchEngine
 from .engines.update import UpdateEngine
-from .indicators import BBANDS, AlnSessions, MACD, RSI, SMA, CmeOpenSDEV, CurrencyStrength, CurrentDayOHL, SessionSDEV
+from .indicators import BBANDS, AlnSessions, AmTBR, MACD, RSI, SMA, CmeOpenSDEV, CurrencyStrength, CurrentDayOHL, SessionSDEV
 
 _REGISTRY: Optional[IndicatorRegistry] = None
 _BATCH_ENGINE: Optional[BatchEngine] = None
@@ -32,6 +32,7 @@ def _create_registry() -> IndicatorRegistry:
             CmeOpenSDEV(),
             AlnSessions(),
             CurrentDayOHL(),
+            AmTBR(),
         ]
     )
     try:

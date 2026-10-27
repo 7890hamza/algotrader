@@ -33,6 +33,31 @@ def _session_sdev_metadata(open_label: str, label_prefix: str = "") -> dict:
     return {"overlay": True, "outputs": outputs}
 
 
+def _am_tbr_metadata() -> dict:
+    """TBR Open and +/- 0.25 SDEV in the SDEV style; a dot marks each line's first touch."""
+
+    def level(label: str, color: str, touch: str | None = None) -> dict:
+        out = {
+            "type": "level",
+            "label": label,
+            "labelColor": SDEV_LABEL_COLOR,
+            "showPrice": True,
+            "plotOptions": {"lineWidth": 1, "lineStyle": DOTTED, "color": color},
+        }
+        if touch:
+            out["touch"] = touch
+        return out
+
+    return {
+        "overlay": True,
+        "outputs": {
+            "open": level("TBR Open", SDEV_OPEN_COLOR),
+            "+0.25": level("TBR +0.25", SDEV_LEVEL_COLOR, "high"),
+            "-0.25": level("TBR -0.25", SDEV_LEVEL_COLOR, "low"),
+        },
+    }
+
+
 def _current_day_ohl_metadata() -> dict:
     """Three step lines like NinjaTrader's CurrentDayOHL: dashed open, green high, red low.
 
@@ -225,4 +250,5 @@ UI_METADATA: dict[str, dict] = {
     "cme_open_sdev": _session_sdev_metadata("CME Open"),
     "aln_sessions": _aln_metadata(),
     "current_day_ohl": _current_day_ohl_metadata(),
+    "am_tbr": _am_tbr_metadata(),
 }

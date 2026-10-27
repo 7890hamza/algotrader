@@ -15,6 +15,7 @@ INDICATOR_MAP: dict[int, str] = {
     7: "cme_open_sdev",
     8: "aln_sessions",
     9: "current_day_ohl",
+    10: "am_tbr",
 }
 
 

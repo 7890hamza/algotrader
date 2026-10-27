@@ -99,8 +99,12 @@ def session_levels(
     session_days: str = "Mon-Fri",
     extend: str = "session",
     levels: Sequence[float] = MULTIPLIERS,
+    ddof: int = 0,
 ) -> np.ndarray:
-    """Return an array (time, len(OUTPUTS)) of open and +/- SDEV levels per bar."""
+    """Return an array (time, len(OUTPUTS)) of open and +/- SDEV levels per bar.
+
+    ``ddof`` 0 = population SDEV (Net Change SDEV), 1 = sample SDEV (AM TBR).
+    """
     n = len(epoch_ms)
     out = np.full((n, len(OUTPUTS)), np.nan, dtype=np.float64)
     if n == 0:
@@ -154,7 +158,7 @@ def session_levels(
     for k in range(days.size):
         before = complete_pos[complete_pos < k]
         if before.size >= lookback:
-            sigma[k] = float(np.std(net_pct[before[-lookback:]], ddof=0))
+            sigma[k] = float(np.std(net_pct[before[-lookback:]], ddof=ddof))
 
     # Each bar takes the levels of the latest session that opened at or before it,
     # either only inside that session's window or until the next session opens.
@@ -253,6 +257,7 @@ class SessionSDEV(IndicatorBase):
             session_days=str(merged["session_days"]),
             extend=str(merged["extend"]),
             levels=parse_levels(merged["levels"]),
+            ddof=int(merged.get("ddof", 0)),
         )
         n_time, n_assets = data.data.shape[0], data.data.shape[1]
         out = np.full((n_time, n_assets, len(OUTPUTS)), np.nan, dtype=np.float64)
@@ -286,4 +291,28 @@ class CmeOpenSDEV(SessionSDEV):
             "previous complete 3-7 PM sessions (population SDEV)."
         ),
         parameters=_parameters("15:00", "19:00", "Sun-Thu"),
+    )
+
+
+class AmTBR(SessionSDEV):
+    """AM Time-Based Range (nqstats AM TBR): 08:00-12:00 New York, 5-9 AM Pacific.
+
+    TBR Open and +/- 0.25 SDEV, where 1 SDEV is the sample SDEV of the previous 20
+    sessions' % net change. Price usually comes back to TBR Open after the first
+    touch of either 0.25 line (ES 2016-2025: about 3 in 4 sessions).
+    """
+
+    spec = replace(
+        SessionSDEV.spec,
+        id="am_tbr",
+        name="AM TBR",
+        description=(
+            "AM Time-Based Range: TBR Open (8:00 New York) and +/- 0.25 SDEV from the "
+            "sample SDEV of the previous 20 sessions' net change."
+        ),
+        parameters={
+            **_parameters("05:00", "09:00", "Mon-Fri"),
+            "levels": {"type": "string", "default": "0.25"},
+            "ddof": {"type": "int", "default": 1, "min": 0, "max": 1},
+        },
     )
