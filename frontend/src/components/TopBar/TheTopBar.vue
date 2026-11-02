@@ -52,6 +52,27 @@
       </n-button>
     </div>
 
+    <div v-if="showLayout" class="chart-layout-controls" role="group" aria-label="Chart layout">
+      <n-button
+        size="small"
+        round
+        :type="chartLayout === 'single' ? 'primary' : 'default'"
+        :secondary="chartLayout !== 'single'"
+        data-testid="chart-layout-single"
+        :aria-pressed="chartLayout === 'single'"
+        @click="emit('update:chartLayout', 'single')"
+      >1 chart</n-button>
+      <n-button
+        size="small"
+        round
+        :type="chartLayout === 'split' ? 'primary' : 'default'"
+        :secondary="chartLayout !== 'split'"
+        data-testid="chart-layout-split"
+        :aria-pressed="chartLayout === 'split'"
+        @click="emit('update:chartLayout', 'split')"
+      >2 charts</n-button>
+    </div>
+
     <TopBarModals />
   </div>
 </template>
@@ -69,6 +90,7 @@ import TopBarModals from '@/components/TopBar/Modals/TopBarModals.vue';
 import { HandRightOutline, ResizeOutline } from '@/icons';
 import { useCurrentMarketStore } from '@/stores/currentMarketStore';
 import { useModalStore } from '@/stores/modalStore';
+import type { ChartLayout } from '@/utils/chartPane';
 
 defineOptions({
   name: 'TheTopBar',
@@ -76,12 +98,17 @@ defineOptions({
 
 const props = withDefaults(defineProps<{
   chartInteractionMode?: ChartInteractionMode;
+  chartLayout?: ChartLayout;
+  showLayout?: boolean;
 }>(), {
   chartInteractionMode: DEFAULT_CHART_INTERACTION_MODE,
+  chartLayout: 'single',
+  showLayout: false,
 });
 
 const emit = defineEmits<{
   'update:chartInteractionMode': [mode: ChartInteractionMode];
+  'update:chartLayout': [layout: ChartLayout];
 }>();
 
 const currentMarketStore = useCurrentMarketStore();
@@ -116,6 +143,12 @@ function selectChartInteractionMode(mode: ChartInteractionMode): void {
   align-items: center;
   gap: 6px;
   margin-left: auto;
+}
+
+.chart-layout-controls {
+  display: flex;
+  align-items: center;
+  gap: 4px;
 }
 
 .chart-interaction-mode-button--active :deep(.n-button__state-border) {
