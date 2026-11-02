@@ -332,14 +332,17 @@ interface DrawableMaru {
   /** Where price came back, or null while it has not. */
   backX: number | null;
   y: number;
+  /** The mouse is on this candle: draw its line. */
+  hovered: boolean;
 }
 
 const MARU_COLOR = 'rgba(255, 255, 255, 0.9)';
 const MARU_DONE_COLOR = 'rgba(255, 255, 255, 0.35)';
 
 /**
- * No-wick candles: a white dot at the open and a small dashed white line to where
- * price came back (dim, with a check) or, while it has not, to the right edge with the price.
+ * No-wick candles: a white dot at the open. Hovering the candle shows a small dashed white
+ * line to where price came back (dim, with a check) or, while it has not, to the right edge
+ * with the price. Lines only on hover keep the chart clean.
  */
 class MaruRenderer implements IPrimitivePaneRenderer {
   constructor(
@@ -353,7 +356,12 @@ class MaruRenderer implements IPrimitivePaneRenderer {
       ctx.font = MARK_FONT;
       ctx.textBaseline = 'middle';
       ctx.lineWidth = 1;
-      for (const { maru, x, backX, y } of this.marus) {
+      for (const { maru, x, backX, y, hovered } of this.marus) {
+        ctx.beginPath();
+        ctx.arc(x, y, 3, 0, Math.PI * 2);
+        ctx.fillStyle = '#ffffff';
+        ctx.fill();
+        if (!hovered) continue;
         const waiting = backX === null;
         const text = `${formatLevelPrice(maru.price, this.precision)} not back yet`;
         const endX = waiting ? mediaSize.width - ctx.measureText(text).width - 10 : backX;
@@ -366,10 +374,6 @@ class MaruRenderer implements IPrimitivePaneRenderer {
           ctx.stroke();
           ctx.setLineDash([]);
         }
-        ctx.beginPath();
-        ctx.arc(x, y, 3, 0, Math.PI * 2);
-        ctx.fillStyle = '#ffffff';
-        ctx.fill();
         if (waiting) {
           ctx.fillStyle = MARU_COLOR;
           ctx.fillText(text, endX + 4, y);
@@ -532,7 +536,7 @@ export class SessionLevelsPrimitive implements ISeriesPrimitive<Time> {
     const x = param.point ? Number(param.point.x) : null;
     if (x === this.hoverX) return;
     this.hoverX = x;
-    if (this.tags.length || this.marks.length) this.attachedParams?.requestUpdate();
+    if (this.tags.length || this.marks.length || this.marus.length) this.attachedParams?.requestUpdate();
   };
   private precision = 2;
 
@@ -624,13 +628,15 @@ export class SessionLevelsPrimitive implements ISeriesPrimitive<Time> {
     const params = this.attachedParams;
     if (!params || this.marus.length === 0) return null;
     const timeScale = params.chart.timeScale();
+    const half = Math.max(3, timeScale.options().barSpacing / 2);
     const drawables: DrawableMaru[] = [];
     for (const maru of this.marus) {
       const x = timeScale.timeToCoordinate(maru.time as Time);
       const y = params.series.priceToCoordinate(maru.price);
       if (x === null || y === null) continue;
       const back = maru.backAt === null ? null : this.timeToX(maru.backAt);
-      drawables.push({ maru, x: Number(x), backX: back === null ? null : Number(back), y: Number(y) });
+      const hovered = this.hoverX !== null && Math.abs(this.hoverX - Number(x)) <= half;
+      drawables.push({ maru, x: Number(x), backX: back === null ? null : Number(back), y: Number(y), hovered });
     }
     return drawables.length > 0 ? new MaruRenderer(drawables, this.precision) : null;
   }
