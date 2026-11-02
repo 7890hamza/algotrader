@@ -15,8 +15,10 @@ import { DEFAULT_CHART_TIME_ZONE } from './chartTimeZone';
 import {
   buildEngulfingLines,
   buildEngulfingMarks,
+  buildMaruMarks,
   type CandleMark,
   isEngulfingGuide,
+  type MaruMark,
   type NearbyLevel,
 } from './engulfing';
 
@@ -58,6 +60,7 @@ export interface IndicatorChartManager {
     boxes?: readonly SessionBox[],
     tags?: readonly SessionTag[],
     marks?: readonly CandleMark[],
+    marus?: readonly MaruMark[],
   ): boolean;
   clearSessionLevels?(id: string): boolean;
   sessionLevelsExcept?(id: string): NearbyLevel[];
@@ -226,7 +229,7 @@ export class IndicatorManager {
     const levels = this.chartManager.sessionLevelsExcept?.(id) ?? [];
     const marks = buildEngulfingMarks(points, levels, DEFAULT_CHART_TIME_ZONE);
     const lines = buildEngulfingLines(points, marks);
-    this.chartManager.setSessionLevels?.(id, PRICE_SERIES_KEY, lines, undefined, [], [], marks);
+    this.chartManager.setSessionLevels?.(id, PRICE_SERIES_KEY, lines, undefined, [], [], marks, buildMaruMarks(points));
   }
 
   transformIndicatorData(data: readonly IndicatorDataPoint[], outputKey: string): ChartValuePoint[] {

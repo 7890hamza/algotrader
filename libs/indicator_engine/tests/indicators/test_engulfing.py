@@ -47,6 +47,28 @@ class EngulfingTests(unittest.TestCase):
         self.assertEqual(out[1, COL["inval_at"]], 3 * 60_000)
         self.assertEqual(out[3, COL["inval_bull"]], 100)  # line ends on the break
 
+    def test_marubozu_open_and_return(self) -> None:
+        # green opens at its low 100 (no lower wick), price comes back to 100 on candle 3;
+        # red opens at its high 110 (no upper wick) and price never returns
+        out = run(
+            [
+                (100, 103, 100, 102.5),
+                (102.5, 104, 101, 103),
+                (103, 103.5, 99.75, 101),
+                (110, 110, 105, 106),
+                (106, 107, 104, 104.5),
+            ]
+        )
+        self.assertEqual(out[0, COL["maru_side"]], 1)
+        self.assertEqual(out[0, COL["maru_price"]], 100)
+        self.assertEqual(out[0, COL["maru_back_at"]], 2 * 60_000)
+        self.assertEqual(out[3, COL["maru_side"]], -1)
+        self.assertTrue(np.isnan(out[3, COL["maru_back_at"]]))
+        # a lower wick, or a body under 1 point, is not a no-wick candle
+        self.assertTrue(np.isnan(out[1, COL["maru_side"]]))
+        small = run([(100, 100.75, 100, 100.5)])
+        self.assertTrue(np.isnan(small[0, COL["maru_side"]]))
+
     def test_registered(self) -> None:
         self.assertIn("engulfing", get_registry().list_specs())
 

@@ -23,6 +23,16 @@ export interface CandleMark {
   lines: string[];
 }
 
+/** A no-wick (marubozu) candle: its open is the no-wick end price tends to come back to. */
+export interface MaruMark {
+  /** Epoch seconds of the candle. */
+  time: number;
+  side: 1 | -1;
+  price: number;
+  /** Epoch seconds of the first candle that traded back to the price, or null. */
+  backAt: number | null;
+}
+
 /** A level drawn by another indicator, used to spot engulfings that form at it. */
 export interface NearbyLevel {
   price: number;
@@ -153,6 +163,24 @@ export function buildEngulfingLines(points: readonly IndicatorDataPoint[], marks
     });
   });
   return lines;
+}
+
+/** Every no-wick candle in the points with when (if ever) price came back to its open. */
+export function buildMaruMarks(points: readonly IndicatorDataPoint[]): MaruMark[] {
+  const marks: MaruMark[] = [];
+  for (const point of sorted(points)) {
+    const side = num(point, 'maru_side');
+    const price = num(point, 'maru_price');
+    if ((side !== 1 && side !== -1) || price === null) continue;
+    const backMs = num(point, 'maru_back_at');
+    marks.push({
+      time: Math.floor(Number(point.timestamp_ms) / 1000),
+      side: side as 1 | -1,
+      price,
+      backAt: backMs === null ? null : Math.floor(backMs / 1000),
+    });
+  }
+  return marks;
 }
 
 /** "Follow-through (MFE) · P75" -> "Follow-through P75": short enough to sit under a candle. */

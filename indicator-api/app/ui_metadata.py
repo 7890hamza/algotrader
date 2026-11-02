@@ -295,6 +295,7 @@ def _engulfing_metadata() -> dict:
             "rule": "Body covers the previous opposite body and is bigger; wicks ignored.",
             "invalidation": "A close beyond the engulfing candle's open.",
             "nearPoints": 2,
+            "marubozu": "No wick on the open side; price tends to come back to its open.",
         },
     }
 

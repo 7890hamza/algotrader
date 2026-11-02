@@ -15,7 +15,7 @@ import type {
 
 import type { SessionBox, SessionTag } from './alnGuide';
 import { DEFAULT_CHART_TIME_ZONE } from './chartTimeZone';
-import { BEAR_COLOR, BULL_COLOR, type CandleMark, shortLevelName } from './engulfing';
+import { BEAR_COLOR, BULL_COLOR, type CandleMark, type MaruMark, shortLevelName } from './engulfing';
 import {
   firstTouchTime,
   formatLevelPrice,
@@ -321,6 +321,75 @@ class SessionLevelsRenderer implements IPrimitivePaneRenderer {
   }
 }
 
+interface DrawableMaru {
+  maru: MaruMark;
+  x: number;
+  /** Where price came back, or null while it has not. */
+  backX: number | null;
+  y: number;
+}
+
+const MARU_COLOR = 'rgba(255, 255, 255, 0.9)';
+const MARU_DONE_COLOR = 'rgba(255, 255, 255, 0.35)';
+
+/**
+ * No-wick candles: a white dot at the open and a small dashed white line to where
+ * price came back (dim, with a check) or, while it has not, to the right edge with the price.
+ */
+class MaruRenderer implements IPrimitivePaneRenderer {
+  constructor(
+    private readonly marus: readonly DrawableMaru[],
+    private readonly precision: number,
+  ) {}
+
+  draw(target: CanvasRenderingTarget2D): void {
+    target.useMediaCoordinateSpace(({ context: ctx, mediaSize }) => {
+      ctx.save();
+      ctx.font = MARK_FONT;
+      ctx.textBaseline = 'middle';
+      ctx.lineWidth = 1;
+      for (const { maru, x, backX, y } of this.marus) {
+        const waiting = backX === null;
+        const text = `${formatLevelPrice(maru.price, this.precision)} not back yet`;
+        const endX = waiting ? mediaSize.width - ctx.measureText(text).width - 10 : backX;
+        if (endX > x + 3) {
+          ctx.strokeStyle = waiting ? MARU_COLOR : MARU_DONE_COLOR;
+          ctx.setLineDash([3, 3]);
+          ctx.beginPath();
+          ctx.moveTo(x, crisp(y));
+          ctx.lineTo(endX, crisp(y));
+          ctx.stroke();
+          ctx.setLineDash([]);
+        }
+        ctx.beginPath();
+        ctx.arc(x, y, 3, 0, Math.PI * 2);
+        ctx.fillStyle = '#ffffff';
+        ctx.fill();
+        if (waiting) {
+          ctx.fillStyle = MARU_COLOR;
+          ctx.fillText(text, endX + 4, y);
+        } else if (endX > x + 3) {
+          ctx.fillStyle = MARU_DONE_COLOR;
+          ctx.fillText('✓', endX + 2, y);
+        }
+      }
+      ctx.restore();
+    });
+  }
+}
+
+class MaruPaneView implements IPrimitivePaneView {
+  constructor(private readonly primitive: SessionLevelsPrimitive) {}
+
+  zOrder(): PrimitivePaneViewZOrder {
+    return 'top';
+  }
+
+  renderer(): IPrimitivePaneRenderer | null {
+    return this.primitive.createMaruRenderer();
+  }
+}
+
 interface DrawableMark {
   mark: CandleMark;
   x: number;
@@ -444,6 +513,7 @@ export class SessionLevelsPrimitive implements ISeriesPrimitive<Time> {
     this.paneView,
     new SessionBoxesPaneView(this, 'labels'),
     new SessionTagsPaneView(this),
+    new MaruPaneView(this),
     new CandleMarksPaneView(this),
   ];
   private attachedParams: SeriesAttachedParameter<Time, SeriesType> | null = null;
@@ -451,6 +521,7 @@ export class SessionLevelsPrimitive implements ISeriesPrimitive<Time> {
   private boxes: SessionBox[] = [];
   private tags: SessionTag[] = [];
   private marks: CandleMark[] = [];
+  private marus: MaruMark[] = [];
   private hoverX: number | null = null;
   private readonly onCrosshairMove = (param: MouseEventParams<Time>): void => {
     const x = param.point ? Number(param.point.x) : null;
@@ -484,6 +555,11 @@ export class SessionLevelsPrimitive implements ISeriesPrimitive<Time> {
     this.attachedParams?.requestUpdate();
   }
 
+  setMarus(marus: readonly MaruMark[]): void {
+    this.marus = [...marus];
+    this.attachedParams?.requestUpdate();
+  }
+
   getBoxes(): readonly SessionBox[] {
     return this.boxes;
   }
@@ -508,7 +584,7 @@ export class SessionLevelsPrimitive implements ISeriesPrimitive<Time> {
   }
 
   paneViews(): readonly IPrimitivePaneView[] {
-    return this.segments.length > 0 || this.boxes.length > 0 || this.tags.length > 0 || this.marks.length > 0 ? this.paneViewsList : EMPTY_PANE_VIEWS;
+    return this.segments.length > 0 || this.boxes.length > 0 || this.tags.length > 0 || this.marks.length > 0 || this.marus.length > 0 ? this.paneViewsList : EMPTY_PANE_VIEWS;
   }
 
   autoscaleInfo(startTimePoint: Logical, endTimePoint: Logical): AutoscaleInfo | null {
@@ -537,6 +613,21 @@ export class SessionLevelsPrimitive implements ISeriesPrimitive<Time> {
       drawables.push({ tag, centerX: (left + right) / 2, y: Number(top) - 20, hovered });
     }
     return drawables.length > 0 ? new SessionTagsRenderer(drawables) : null;
+  }
+
+  createMaruRenderer(): IPrimitivePaneRenderer | null {
+    const params = this.attachedParams;
+    if (!params || this.marus.length === 0) return null;
+    const timeScale = params.chart.timeScale();
+    const drawables: DrawableMaru[] = [];
+    for (const maru of this.marus) {
+      const x = timeScale.timeToCoordinate(maru.time as Time);
+      const y = params.series.priceToCoordinate(maru.price);
+      if (x === null || y === null) continue;
+      const back = maru.backAt === null ? null : this.timeToX(maru.backAt);
+      drawables.push({ maru, x: Number(x), backX: back === null ? null : Number(back), y: Number(y) });
+    }
+    return drawables.length > 0 ? new MaruRenderer(drawables, this.precision) : null;
   }
 
   createMarkRenderer(): IPrimitivePaneRenderer | null {

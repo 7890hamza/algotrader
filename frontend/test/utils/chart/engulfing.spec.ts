@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import type { IndicatorDataPoint } from '@/types/contracts';
-import { buildEngulfingLines, buildEngulfingMarks } from '@/utils/chart/engulfing';
+import { buildEngulfingLines, buildEngulfingMarks, buildMaruMarks } from '@/utils/chart/engulfing';
 
 const T = Date.UTC(2026, 9, 12, 13, 30); // 6:30 Pacific
 const M = 5 * 60_000;
@@ -35,5 +35,17 @@ describe('engulfing marks', () => {
     const last = buildEngulfingLines(live, buildEngulfingMarks(live)).at(-1)!;
     expect(last.label).toBe('Bull invalidation');
     expect(last.showPrice).toBe(true);
+  });
+
+  it('reads no-wick candles and when price came back', () => {
+    const marus = buildMaruMarks([
+      { timestamp_ms: T, maru_side: 1, maru_price: 6790, maru_back_at: T + 2 * M },
+      { timestamp_ms: T + M, maru_side: -1, maru_price: 6810, maru_back_at: null },
+      { timestamp_ms: T + 2 * M, signal: 1 },
+    ]);
+    expect(marus).toEqual([
+      { time: T / 1000, side: 1, price: 6790, backAt: (T + 2 * M) / 1000 },
+      { time: (T + M) / 1000, side: -1, price: 6810, backAt: null },
+    ]);
   });
 });

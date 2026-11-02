@@ -17,6 +17,11 @@ Outputs:
   invalidation or ``window`` candles, ``outcome`` +1 when price ran one engulfing body in
   its favour before being invalidated, -1 when invalidated first, 0 while still open,
   and ``inval_at`` (epoch ms of the invalidating close), all on the engulfing candle.
+
+No-wick (marubozu) candles: a green candle that opened at its low or a red candle that
+opened at its high, with a body of at least ``maru_min_body`` points. ``maru_side``
+(+1 green / -1 red) and ``maru_price`` (the open, the no-wick end) sit on that candle and
+``maru_back_at`` is the epoch ms of the first later candle that traded back to it.
 """
 
 from __future__ import annotations
@@ -41,6 +46,9 @@ OUTPUTS = [
     "mfe",
     "outcome",
     "inval_at",
+    "maru_side",
+    "maru_price",
+    "maru_back_at",
 ]
 COL = {name: i for i, name in enumerate(OUTPUTS)}
 
@@ -53,6 +61,7 @@ def engulfing(
     close: np.ndarray,
     *,
     window: int = 24,
+    maru_min_body: float = 1.0,
 ) -> np.ndarray:
     """Return an array (time, len(OUTPUTS)); see the module docstring."""
     n = len(open_)
@@ -95,7 +104,34 @@ def engulfing(
             out[i, COL["outcome"]] = 0
         if j is not None:
             out[i, COL["inval_at"]] = float(epoch_ms[j])
+    _marubozu(out, epoch_ms, o, h, lo, c, maru_min_body)
     return out
+
+
+def _first_back(start: int, price: float, side: int, h: np.ndarray, lo: np.ndarray) -> int | None:
+    """First index >= start that trades back to ``price`` (searched in growing chunks)."""
+    n, size = len(h), 16
+    while start < n:
+        stop = min(n, start + size)
+        hit = (lo[start:stop] <= price) if side == 1 else (h[start:stop] >= price)
+        if hit.any():
+            return start + int(np.argmax(hit))
+        start, size = stop, size * 4
+    return None
+
+
+def _marubozu(out, epoch_ms, o, h, lo, c, min_body: float) -> None:
+    with np.errstate(invalid="ignore"):
+        big = np.abs(c - o) >= min_body
+        green = big & (c > o) & (o == lo)
+        red = big & (c < o) & (o == h)
+    for i in np.flatnonzero(green | red):
+        side = 1 if green[i] else -1
+        out[i, COL["maru_side"]] = side
+        out[i, COL["maru_price"]] = o[i]
+        k = _first_back(i + 1, o[i], side, h, lo)
+        if k is not None:
+            out[i, COL["maru_back_at"]] = float(epoch_ms[k])
 
 
 class Engulfing(IndicatorBase):
@@ -106,9 +142,13 @@ class Engulfing(IndicatorBase):
         name="Engulfing Candles",
         description=(
             "Bullish and bearish engulfing candles, bodies only: the body covers the previous "
-            "opposite body and is bigger. Invalidated by a close beyond the engulfing open."
+            "opposite body and is bigger. Invalidated by a close beyond the engulfing open. "
+            "Also marks no-wick (marubozu) candle opens until price comes back to them."
         ),
-        parameters={"window": {"type": "int", "default": 24, "min": 2}},
+        parameters={
+            "window": {"type": "int", "default": 24, "min": 2},
+            "maru_min_body": {"type": "float", "default": 1.0, "min": 0},
+        },
         outputs=OUTPUTS,
         required_fields=["open", "high", "low", "close"],
         supports_update=False,
@@ -120,6 +160,8 @@ class Engulfing(IndicatorBase):
 
     def batch(self, data: BarTensor, params: Dict) -> Tensor:
         window = int(params.get("window") or self.spec.parameters["window"]["default"])
+        min_body = params.get("maru_min_body")
+        min_body = 1.0 if min_body is None else float(min_body)
         idx = {}
         for field in ("open", "high", "low", "close"):
             if field not in data.fields:
@@ -133,6 +175,7 @@ class Engulfing(IndicatorBase):
                 epoch_ms,
                 *(data.data[:, a, idx[f]] for f in ("open", "high", "low", "close")),
                 window=window,
+                maru_min_body=min_body,
             )
         return Tensor(
             data=out,
