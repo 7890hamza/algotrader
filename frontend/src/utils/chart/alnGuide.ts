@@ -15,6 +15,8 @@ export interface SessionBox {
   /** Text for the top / bottom edge instead of "<label> H" / "<label> L". */
   highLabel?: string;
   lowLabel?: string;
+  /** Small labels inside the box instead of bold ones outside it (Hour Stats). */
+  compact?: boolean;
   /** Fill opacity, 0-1 (default 0.07). */
   fillOpacity?: number;
 }
@@ -447,6 +449,8 @@ export interface SessionTag {
   chipText?: string;
   chipBg?: string;
   chipFg?: string;
+  /** Draw a faint dotted line at the start of this tag's window (hour separators). */
+  separator?: boolean;
 }
 
 const SESSION_LOOKBACK_SECONDS = 13 * 3600;

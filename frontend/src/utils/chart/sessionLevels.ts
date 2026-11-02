@@ -34,6 +34,8 @@ export interface SessionLevelSegment {
   /** Text before the time beside the touch arrow ("Hit") and the diamond ("Back"). */
   touchText?: string;
   markerText?: string;
+  /** Small, quiet label (Hour Stats). */
+  compact?: boolean;
 }
 
 export interface SessionLevelOptions {

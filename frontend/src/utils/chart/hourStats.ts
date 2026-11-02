@@ -77,6 +77,7 @@ export function buildHourTags(
     // Zones are drawn for the current hour only, so only then does the chip sit above them.
     if (live) for (const p of run) for (const k of ['stretch_far', 'follow_far']) { const v = num(p, k); if (v !== null && v > top) top = v; }
     const tag: SessionTag = {
+      separator: true,
       id: `hour@${startMs}`,
       startTime: Math.floor(startMs / 1000),
       endTime: Math.floor(Number(last.timestamp_ms) / 1000),
@@ -144,8 +145,23 @@ export function buildHourTags(
   });
 }
 
-/** Zones of the latest hour only: past hours keep theirs in the hover recap. */
-export function currentHourBoxes<T extends { endTime: number }>(boxes: readonly T[]): T[] {
-  const last = Math.max(...boxes.map((b) => b.endTime));
-  return boxes.filter((b) => b.endTime === last);
+/** Zones of the hour that is running now, once it has broken; past hours show theirs on hover. */
+export function currentHourBoxes<T extends { endTime: number; compact?: boolean }>(boxes: readonly T[], lastTime: number): T[] {
+  return boxes.filter((b) => b.endTime === lastTime).map((b) => ({ ...b, compact: true }));
+}
+
+const SHORT_LABELS: Record<string, string> = { 'Hour Open': 'Open', 'Prior H': 'Prior H', 'Prior L': 'Prior L' };
+
+/**
+ * Quiet lines: past hours keep their lines and markers but no text (the hour chip
+ * shows the story on hover); the running hour gets small labels with prices.
+ */
+export function tidyHourSegments<T extends { endTime: number; label: string; showPrice: boolean; labelColor: string; compact?: boolean; touchText?: string; markerText?: string }>(
+  segments: readonly T[],
+  lastTime: number,
+): T[] {
+  return segments.map((s) => {
+    if (s.endTime !== lastTime) return { ...s, label: '', showPrice: false, touchText: undefined, markerText: undefined };
+    return { ...s, label: SHORT_LABELS[s.label] ?? s.label, labelColor: '#9aa4b2', compact: true };
+  });
 }

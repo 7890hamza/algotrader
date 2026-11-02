@@ -332,8 +332,8 @@ def _hour_stats_metadata() -> dict:
             "plotOptions": {"lineWidth": 1, "lineStyle": 0, "color": grey},
         }
     for zone, title, color in (
-        ("stretch", "Stretch (MAE)", "#3FB950"),
-        ("follow", "Follow-through (MFE)", "#E9C46A"),
+        ("stretch", "MAE", "#3FB950"),
+        ("follow", "MFE", "#E9C46A"),
     ):
         for edge, words in (("near", "median"), ("far", "P90")):
             outputs[f"{zone}_{edge}"] = {

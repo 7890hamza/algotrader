@@ -30,6 +30,7 @@ const TOUCH_FILL = '#131722';
 const EMPTY_PANE_VIEWS: readonly IPrimitivePaneView[] = [];
 const BOX_LABEL_FONT = '600 11px -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif';
 const BOX_FILL_ALPHA = 0.07;
+const COMPACT_FONT = '500 11px -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif';
 
 interface DrawableBox {
   box: SessionBox;
@@ -55,7 +56,7 @@ class SessionBoxesRenderer implements IPrimitivePaneRenderer {
   ) {}
 
   draw(target: CanvasRenderingTarget2D): void {
-    target.useMediaCoordinateSpace(({ context }) => {
+    target.useMediaCoordinateSpace(({ context, mediaSize }) => {
       context.save();
       if (this.layer === 'fill') {
         for (const { box, left, right, top, bottom } of this.boxes) {
@@ -68,9 +69,22 @@ class SessionBoxesRenderer implements IPrimitivePaneRenderer {
           context.strokeRect(crisp(left), crisp(top), Math.round(width), Math.round(height));
         }
       } else {
-        context.font = BOX_LABEL_FONT;
         for (const { box, left, right, top, bottom } of this.boxes) {
-          if (right - left < 40) continue;
+          if (right - left < 40 && !box.compact) continue;
+          if (box.compact) {
+            // Quiet labels tucked inside the box corners.
+            context.font = COMPACT_FONT;
+            context.fillStyle = withAlpha(box.color, 0.9);
+            const hi = `${box.highLabel ?? box.label} ${formatLevelPrice(box.high, this.precision)}`;
+            const lo = `${box.lowLabel ?? box.label} ${formatLevelPrice(box.low, this.precision)}`;
+            const fit = (text: string): number => Math.max(2, Math.min(left + 4, mediaSize.width - context.measureText(text).width - 4));
+            context.textBaseline = 'top';
+            context.fillText(hi, fit(hi), top + 3);
+            context.textBaseline = 'bottom';
+            context.fillText(lo, fit(lo), bottom - 3);
+            continue;
+          }
+          context.font = BOX_LABEL_FONT;
           context.fillStyle = box.color;
           context.textBaseline = 'bottom';
           context.fillText(`${box.highLabel ?? `${box.label} H`} ${formatLevelPrice(box.high, this.precision)}`, left + 4, top - 3);
@@ -111,11 +125,26 @@ function roundRect(ctx: CanvasRenderingContext2D, x: number, y: number, w: numbe
 
 /** "10/23 [P3] ✓" centered over each session; hovering a session opens its recap. */
 class SessionTagsRenderer implements IPrimitivePaneRenderer {
-  constructor(private readonly tags: readonly DrawableTag[]) {}
+  constructor(
+    private readonly tags: readonly DrawableTag[],
+    private readonly separators: readonly number[] = [],
+  ) {}
 
   draw(target: CanvasRenderingTarget2D): void {
     target.useMediaCoordinateSpace(({ context: ctx, mediaSize }) => {
       ctx.save();
+      if (this.separators.length) {
+        ctx.strokeStyle = 'rgba(139, 148, 158, 0.28)';
+        ctx.lineWidth = 1;
+        ctx.setLineDash([2, 4]);
+        for (const x of this.separators) {
+          ctx.beginPath();
+          ctx.moveTo(crisp(x), 0);
+          ctx.lineTo(crisp(x), mediaSize.height);
+          ctx.stroke();
+        }
+        ctx.setLineDash([]);
+      }
       ctx.textBaseline = 'middle';
       const chipH = 18;
       let card: { tag: SessionTag; centerX: number; y: number; top: number } | null = null;
@@ -249,6 +278,7 @@ class SessionLevelsRenderer implements IPrimitivePaneRenderer {
         const text = segment.showPrice
           ? `${segment.label} ${formatLevelPrice(segment.price, this.precision)}`
           : segment.label;
+        context.font = segment.compact ? COMPACT_FONT : LABEL_FONT;
         const maxLabelX = mediaSize.width - context.measureText(text).width - LABEL_GAP_PX;
         const labelX = Math.min(endX + LABEL_GAP_PX, maxLabelX);
         return { ...drawable, text, labelX, lineEndX: Math.min(endX, labelX - LABEL_GAP_PX / 2) };
@@ -318,7 +348,8 @@ class SessionLevelsRenderer implements IPrimitivePaneRenderer {
           context.stroke();
         }
         context.fillStyle = segment.labelColor;
-        context.fillText(text, labelX, y);
+        context.font = segment.compact ? COMPACT_FONT : LABEL_FONT;
+        if (text) context.fillText(text, labelX, y);
       }
 
       context.restore();
@@ -609,7 +640,12 @@ export class SessionLevelsPrimitive implements ISeriesPrimitive<Time> {
     const params = this.attachedParams;
     if (!params || this.tags.length === 0) return null;
     const drawables: DrawableTag[] = [];
+    const separators: number[] = [];
     for (const tag of this.tags) {
+      if (tag.separator) {
+        const sx = params.chart.timeScale().timeToCoordinate(tag.startTime as Time);
+        if (sx !== null) separators.push(Number(sx) - params.chart.timeScale().options().barSpacing / 2);
+      }
       const start = this.timeToX(tag.startTime);
       const end = this.timeToX(tag.endTime);
       const top = params.series.priceToCoordinate(tag.top);
@@ -621,7 +657,7 @@ export class SessionLevelsPrimitive implements ISeriesPrimitive<Time> {
       // Above the box labels ("Asia H ...") that sit on top of each box.
       drawables.push({ tag, centerX: (left + right) / 2, y: Number(top) - 20, hovered });
     }
-    return drawables.length > 0 ? new SessionTagsRenderer(drawables) : null;
+    return drawables.length > 0 || separators.length > 0 ? new SessionTagsRenderer(drawables, separators) : null;
   }
 
   createMaruRenderer(): IPrimitivePaneRenderer | null {
