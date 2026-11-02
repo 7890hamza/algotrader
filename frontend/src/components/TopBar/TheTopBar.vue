@@ -1,12 +1,17 @@
 <template>
   <div id="wrapper-select">
-    <n-button primary round @click="modalStore.openModal('symbolSearch')">
-      {{ currentSymbol }}
+    <n-button primary round data-testid="topbar-symbol" @click="openModal('symbolSearch')">
+      {{ remote ? (remote.symbol ?? '—') : currentSymbol }}
     </n-button>
 
-    <TimeframeDropdown />
+    <TimeframeDropdown
+      :remote-value="remote ? remote.timeframe : undefined"
+      @remote-select="(value: string) => emit('remote-timeframe', value)"
+    />
 
-    <n-button round @click="modalStore.openModal('indicatorSearch')">Indicator</n-button>
+    <n-button round data-testid="topbar-indicator" @click="openModal('indicatorSearch')">Indicator</n-button>
+
+    <span v-if="remote" class="active-chart-note" data-testid="active-chart-note">Right chart</span>
 
     <div class="chart-interaction-controls" role="group" aria-label="Chart interaction mode">
       <n-button
@@ -73,7 +78,7 @@
       >2 charts</n-button>
     </div>
 
-    <TopBarModals />
+    <TopBarModals v-if="!remote" />
   </div>
 </template>
 
@@ -100,16 +105,26 @@ const props = withDefaults(defineProps<{
   chartInteractionMode?: ChartInteractionMode;
   chartLayout?: ChartLayout;
   showLayout?: boolean;
+  /** The active chart is the second one: its symbol and timeframe, and actions go to it. */
+  remote?: { symbol: string | null; timeframe: string } | null;
 }>(), {
   chartInteractionMode: DEFAULT_CHART_INTERACTION_MODE,
   chartLayout: 'single',
   showLayout: false,
+  remote: null,
 });
 
 const emit = defineEmits<{
   'update:chartInteractionMode': [mode: ChartInteractionMode];
   'update:chartLayout': [layout: ChartLayout];
+  'remote-modal': [name: string];
+  'remote-timeframe': [value: string];
 }>();
+
+function openModal(name: string): void {
+  if (props.remote) emit('remote-modal', name);
+  else modalStore.openModal(name);
+}
 
 const currentMarketStore = useCurrentMarketStore();
 const modalStore = useModalStore();
@@ -143,6 +158,12 @@ function selectChartInteractionMode(mode: ChartInteractionMode): void {
   align-items: center;
   gap: 6px;
   margin-left: auto;
+}
+
+.active-chart-note {
+  align-self: center;
+  font-size: 12px;
+  color: #7fe7c4;
 }
 
 .chart-layout-controls {
