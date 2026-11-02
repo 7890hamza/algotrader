@@ -15,6 +15,7 @@ import type {
 
 import type { SessionBox, SessionTag } from './alnGuide';
 import { DEFAULT_CHART_TIME_ZONE } from './chartTimeZone';
+import { BEAR_COLOR, BULL_COLOR, type CandleMark, shortLevelName } from './engulfing';
 import {
   firstTouchTime,
   formatLevelPrice,
@@ -320,6 +321,106 @@ class SessionLevelsRenderer implements IPrimitivePaneRenderer {
   }
 }
 
+interface DrawableMark {
+  mark: CandleMark;
+  x: number;
+  half: number;
+  top: number;
+  bottom: number;
+  hovered: boolean;
+}
+
+/**
+ * Engulfing candles: an outline around the body and a triangle beyond it, bold when
+ * the candle formed at another indicator's level, grey when it was invalidated.
+ */
+class CandleMarksRenderer implements IPrimitivePaneRenderer {
+  constructor(private readonly marks: readonly DrawableMark[]) {}
+
+  draw(target: CanvasRenderingTarget2D): void {
+    target.useMediaCoordinateSpace(({ context: ctx, mediaSize }) => {
+      ctx.save();
+      // Only one level name per side within this many pixels, so names never overlap.
+      const lastTextX: Record<number, number> = { 1: -Infinity, [-1]: -Infinity };
+      for (const { mark, x, half, top, bottom } of this.marks) {
+        const color = mark.side === 1 ? BULL_COLOR : BEAR_COLOR;
+        const bold = mark.atLevel !== null;
+        const broken = mark.outcome === -1;
+        const pad = 2;
+        if (bold) {
+          ctx.lineWidth = 2;
+          ctx.strokeStyle = color;
+          ctx.strokeRect(crisp(x - half - pad), crisp(top - pad), Math.round(2 * (half + pad)), Math.round(bottom - top + 2 * pad));
+        }
+        const size = bold ? 7 : 4;
+        const dir = mark.side === 1 ? 1 : -1;
+        const tipY = mark.side === 1 ? bottom + pad + 4 : top - pad - 4;
+        const baseY = tipY + dir * size * 1.6;
+        ctx.beginPath();
+        ctx.moveTo(x, tipY);
+        ctx.lineTo(x - size, baseY);
+        ctx.lineTo(x + size, baseY);
+        ctx.closePath();
+        if (bold && broken) {
+          ctx.fillStyle = TOUCH_FILL;
+          ctx.fill();
+          ctx.lineWidth = 1.5;
+          ctx.strokeStyle = '#8a919c';
+          ctx.stroke();
+        } else {
+          ctx.fillStyle = withAlpha(color, bold ? 1 : broken ? 0.35 : 0.75);
+          ctx.fill();
+        }
+        if (bold && x - lastTextX[mark.side] > 120) {
+          lastTextX[mark.side] = x;
+          ctx.font = MARK_FONT;
+          ctx.fillStyle = color;
+          ctx.textAlign = 'center';
+          ctx.textBaseline = mark.side === 1 ? 'top' : 'bottom';
+          const result = mark.outcome === 1 ? ' ✓' : broken ? ' ✕' : '';
+          ctx.fillText(`${shortLevelName(mark.atLevel ?? '')}${result}`, x, baseY + dir * 3);
+          ctx.textAlign = 'left';
+        }
+      }
+      const hovered = this.marks.find((m) => m.hovered);
+      if (hovered) {
+        ctx.font = TAG_TEXT_FONT;
+        ctx.textBaseline = 'middle';
+        const lineH = 17;
+        const { lines } = hovered.mark;
+        const width = Math.max(...lines.map((line) => ctx.measureText(line).width)) + 20;
+        const height = lines.length * lineH + 12;
+        const left = Math.max(4, Math.min(mediaSize.width - width - 4, hovered.x + hovered.half + 10));
+        const above = hovered.top - height - 30;
+        const cardTop = above >= 4 ? above : Math.min(mediaSize.height - height - 4, hovered.bottom + 30);
+        roundRect(ctx, left, cardTop, width, height, 6);
+        ctx.fillStyle = 'rgba(19, 23, 34, 0.96)';
+        ctx.fill();
+        ctx.strokeStyle = hovered.mark.side === 1 ? BULL_COLOR : BEAR_COLOR;
+        ctx.lineWidth = 1;
+        ctx.stroke();
+        lines.forEach((line, i) => {
+          ctx.fillStyle = i === 0 ? '#e6e6e6' : '#9aa4b2';
+          ctx.fillText(line, left + 10, cardTop + 6 + lineH * i + lineH / 2);
+        });
+      }
+      ctx.restore();
+    });
+  }
+}
+
+class CandleMarksPaneView implements IPrimitivePaneView {
+  constructor(private readonly primitive: SessionLevelsPrimitive) {}
+
+  zOrder(): PrimitivePaneViewZOrder {
+    return 'top';
+  }
+
+  renderer(): IPrimitivePaneRenderer | null {
+    return this.primitive.createMarkRenderer();
+  }
+}
+
 class SessionLevelsPaneView implements IPrimitivePaneView {
   constructor(private readonly primitive: SessionLevelsPrimitive) {}
 
@@ -343,17 +444,19 @@ export class SessionLevelsPrimitive implements ISeriesPrimitive<Time> {
     this.paneView,
     new SessionBoxesPaneView(this, 'labels'),
     new SessionTagsPaneView(this),
+    new CandleMarksPaneView(this),
   ];
   private attachedParams: SeriesAttachedParameter<Time, SeriesType> | null = null;
   private segments: SessionLevelSegment[];
   private boxes: SessionBox[] = [];
   private tags: SessionTag[] = [];
+  private marks: CandleMark[] = [];
   private hoverX: number | null = null;
   private readonly onCrosshairMove = (param: MouseEventParams<Time>): void => {
     const x = param.point ? Number(param.point.x) : null;
     if (x === this.hoverX) return;
     this.hoverX = x;
-    if (this.tags.length) this.attachedParams?.requestUpdate();
+    if (this.tags.length || this.marks.length) this.attachedParams?.requestUpdate();
   };
   private precision = 2;
 
@@ -373,6 +476,11 @@ export class SessionLevelsPrimitive implements ISeriesPrimitive<Time> {
 
   setTags(tags: readonly SessionTag[]): void {
     this.tags = [...tags];
+    this.attachedParams?.requestUpdate();
+  }
+
+  setMarks(marks: readonly CandleMark[]): void {
+    this.marks = [...marks];
     this.attachedParams?.requestUpdate();
   }
 
@@ -400,7 +508,7 @@ export class SessionLevelsPrimitive implements ISeriesPrimitive<Time> {
   }
 
   paneViews(): readonly IPrimitivePaneView[] {
-    return this.segments.length > 0 || this.boxes.length > 0 || this.tags.length > 0 ? this.paneViewsList : EMPTY_PANE_VIEWS;
+    return this.segments.length > 0 || this.boxes.length > 0 || this.tags.length > 0 || this.marks.length > 0 ? this.paneViewsList : EMPTY_PANE_VIEWS;
   }
 
   autoscaleInfo(startTimePoint: Logical, endTimePoint: Logical): AutoscaleInfo | null {
@@ -429,6 +537,23 @@ export class SessionLevelsPrimitive implements ISeriesPrimitive<Time> {
       drawables.push({ tag, centerX: (left + right) / 2, y: Number(top) - 20, hovered });
     }
     return drawables.length > 0 ? new SessionTagsRenderer(drawables) : null;
+  }
+
+  createMarkRenderer(): IPrimitivePaneRenderer | null {
+    const params = this.attachedParams;
+    if (!params || this.marks.length === 0) return null;
+    const half = Math.max(1, params.chart.timeScale().options().barSpacing * 0.4);
+    const drawables: DrawableMark[] = [];
+    for (const mark of this.marks) {
+      const x = params.chart.timeScale().timeToCoordinate(mark.time as Time);
+      const top = params.series.priceToCoordinate(mark.top);
+      const bottom = params.series.priceToCoordinate(mark.bottom);
+      if (x === null || top === null || bottom === null) continue;
+      const cx = Number(x);
+      const hovered = this.hoverX !== null && Math.abs(this.hoverX - cx) <= Math.max(half, 3);
+      drawables.push({ mark, x: cx, half, top: Number(top), bottom: Number(bottom), hovered });
+    }
+    return drawables.length > 0 ? new CandleMarksRenderer(drawables) : null;
   }
 
   createBoxRenderer(layer: 'fill' | 'labels'): IPrimitivePaneRenderer | null {

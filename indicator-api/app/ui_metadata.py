@@ -285,6 +285,20 @@ def _current_day_ohl_metadata() -> dict:
     }
 
 
+def _engulfing_metadata() -> dict:
+    """Engulfing candles are drawn by the chart's price primitive from the raw outputs."""
+    return {
+        "overlay": True,
+        "outputs": {},
+        "guide": {
+            "kind": "engulfing",
+            "rule": "Body covers the previous opposite body and is bigger; wicks ignored.",
+            "invalidation": "A close beyond the engulfing candle's open.",
+            "nearPoints": 2,
+        },
+    }
+
+
 # ES statistics for the ALN guide: 2016-2025, AMP 1-minute data, New York session
 # 08:00-16:00 New York time, a break = any trade one tick beyond the London level.
 ALN_STATS = {
@@ -459,4 +473,5 @@ UI_METADATA: dict[str, dict] = {
     "current_day_ohl": _current_day_ohl_metadata(),
     "am_tbr": _am_tbr_metadata(),
     "aln_tbr": _aln_tbr_metadata(),
+    "engulfing": _engulfing_metadata(),
 }

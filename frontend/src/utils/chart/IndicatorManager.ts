@@ -12,6 +12,13 @@ import {
   type SessionTag,
 } from './alnGuide';
 import { DEFAULT_CHART_TIME_ZONE } from './chartTimeZone';
+import {
+  buildEngulfingLines,
+  buildEngulfingMarks,
+  type CandleMark,
+  isEngulfingGuide,
+  type NearbyLevel,
+} from './engulfing';
 
 import {
   buildSessionLevelSegments,
@@ -50,8 +57,10 @@ export interface IndicatorChartManager {
     precision?: number,
     boxes?: readonly SessionBox[],
     tags?: readonly SessionTag[],
+    marks?: readonly CandleMark[],
   ): boolean;
   clearSessionLevels?(id: string): boolean;
+  sessionLevelsExcept?(id: string): NearbyLevel[];
 }
 
 /** Key of the main candlestick series that session levels are drawn on. */
@@ -77,7 +86,8 @@ function drawsOnPrice(info: IndicatorInfo): boolean {
   return (
     hasLevelOutputs(info.outputs) ||
     Object.values(info.outputs).some((output) => output.type === 'box') ||
-    readGuideConfig(info.guide) !== null
+    readGuideConfig(info.guide) !== null ||
+    isEngulfingGuide(info.guide)
   );
 }
 
@@ -186,6 +196,10 @@ export class IndicatorManager {
     if (!indicator || !points || !this.chartManager.setSessionLevels) {
       return;
     }
+    if (isEngulfingGuide(indicator.info.guide)) {
+      this.renderEngulfing(id, points);
+      return;
+    }
     const segments = buildSessionLevelSegments(
       points,
       indicator.info.outputs,
@@ -200,6 +214,19 @@ export class IndicatorManager {
       ? buildSessionTags(points, boxes, DEFAULT_CHART_TIME_ZONE)
       : tbr.length ? buildTbrTags(points, tbr, DEFAULT_CHART_TIME_ZONE) : [];
     this.chartManager.setSessionLevels(id, PRICE_SERIES_KEY, segments, undefined, boxes, tags);
+    // Engulfing candles highlight the levels other indicators draw, so redraw them.
+    for (const [otherId] of this.levelPoints) {
+      if (otherId !== id && isEngulfingGuide(this.indicatorsStore.getById(otherId)?.info.guide)) {
+        this.renderLevels(otherId);
+      }
+    }
+  }
+
+  private renderEngulfing(id: string, points: readonly IndicatorDataPoint[]): void {
+    const levels = this.chartManager.sessionLevelsExcept?.(id) ?? [];
+    const marks = buildEngulfingMarks(points, levels, DEFAULT_CHART_TIME_ZONE);
+    const lines = buildEngulfingLines(points, marks);
+    this.chartManager.setSessionLevels?.(id, PRICE_SERIES_KEY, lines, undefined, [], [], marks);
   }
 
   transformIndicatorData(data: readonly IndicatorDataPoint[], outputKey: string): ChartValuePoint[] {
@@ -298,6 +325,9 @@ export class IndicatorManager {
     this.chartManager.clearSessionLevels?.(id);
     this.levelPoints.delete(id);
     this.levelStyles.delete(id);
+    for (const [otherId, points] of this.levelPoints) {
+      if (isEngulfingGuide(this.indicatorsStore.getById(otherId)?.info.guide)) this.renderEngulfing(otherId, points);
+    }
 
     const indicator = this.indicatorsStore.getById(id);
     if (!indicator) return;

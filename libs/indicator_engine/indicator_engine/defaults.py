@@ -24,6 +24,7 @@ from .indicators import (
     CmeOpenSDEV,
     CurrencyStrength,
     CurrentDayOHL,
+    Engulfing,
     SessionSDEV,
 )
 
@@ -46,6 +47,7 @@ def _create_registry() -> IndicatorRegistry:
             CurrentDayOHL(),
             AmTBR(),
             AlnTBR(),
+            Engulfing(),
         ]
     )
     try:

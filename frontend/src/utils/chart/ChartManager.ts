@@ -48,6 +48,7 @@ import type { MeasurementOverlayPrimitive } from './measurementOverlayPrimitive'
 import type { SessionLevelSegment } from './sessionLevels';
 import { SessionLevelsPrimitive } from './sessionLevelsPrimitive';
 import type { SessionBox, SessionTag } from './alnGuide';
+import type { CandleMark, NearbyLevel } from './engulfing';
 
 export type ChartSeriesType =
   | 'line'
@@ -485,6 +486,7 @@ export class ChartManager {
     precision?: number,
     boxes: readonly SessionBox[] = [],
     tags: readonly SessionTag[] = [],
+    marks: readonly CandleMark[] = [],
   ): boolean {
     const seriesInfo = this.series.get(seriesKey);
     if (!seriesInfo) {
@@ -497,6 +499,7 @@ export class ChartManager {
         if (precision !== undefined) existing.primitive.setPrecision(precision);
         existing.primitive.setBoxes(boxes);
         existing.primitive.setTags(tags);
+        existing.primitive.setMarks(marks);
         existing.primitive.setSegments(segments);
         return true;
       }
@@ -506,6 +509,7 @@ export class ChartManager {
       const primitive = new SessionLevelsPrimitive(segments);
       primitive.setBoxes(boxes);
       primitive.setTags(tags);
+      primitive.setMarks(marks);
       if (precision !== undefined) primitive.setPrecision(precision);
       seriesInfo.series.attachPrimitive(primitive);
       this.sessionLevelPrimitives.set(id, { seriesKey, series: seriesInfo.series, primitive });
@@ -514,6 +518,23 @@ export class ChartManager {
       console.error(`Failed to set session levels '${id}':`, error);
       return false;
     }
+  }
+
+  /** Levels and box edges drawn by every other indicator (for engulfing-at-level). */
+  sessionLevelsExcept(id: string): NearbyLevel[] {
+    const levels: NearbyLevel[] = [];
+    for (const [otherId, { primitive }] of this.sessionLevelPrimitives) {
+      if (otherId === id) continue;
+      for (const s of primitive.getSegments()) {
+        if (!s.label) continue;
+        levels.push({ price: s.price, label: s.label, startTime: s.startTime, endTime: s.sessionEndTime ?? s.endTime });
+      }
+      for (const b of primitive.getBoxes()) {
+        levels.push({ price: b.high, label: b.highLabel ?? `${b.label} H`, startTime: b.startTime, endTime: b.endTime });
+        levels.push({ price: b.low, label: b.lowLabel ?? `${b.label} L`, startTime: b.startTime, endTime: b.endTime });
+      }
+    }
+    return levels;
   }
 
   clearSessionLevels(id: string): boolean {
