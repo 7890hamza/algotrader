@@ -25,6 +25,7 @@ from .indicators import (
     CurrencyStrength,
     CurrentDayOHL,
     Engulfing,
+    HourStats,
     SessionSDEV,
 )
 
@@ -48,6 +49,7 @@ def _create_registry() -> IndicatorRegistry:
             AmTBR(),
             AlnTBR(),
             Engulfing(),
+            HourStats(),
         ]
     )
     try:

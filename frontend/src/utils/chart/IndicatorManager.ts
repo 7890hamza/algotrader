@@ -12,6 +12,7 @@ import {
   type SessionTag,
 } from './alnGuide';
 import { DEFAULT_CHART_TIME_ZONE } from './chartTimeZone';
+import { buildHourTags, currentHourBoxes, readHourStatsGuide } from './hourStats';
 import {
   buildEngulfingLines,
   buildEngulfingMarks,
@@ -211,11 +212,15 @@ export class IndicatorManager {
     );
     const guide = readGuideConfig(indicator.info.guide);
     if (guide) segments.push(...buildAlnGuideLines(points, guide));
-    const boxes = buildSessionBoxes(points, indicator.info.outputs);
+    const hours = readHourStatsGuide(indicator.info.guide);
+    const allBoxes = buildSessionBoxes(points, indicator.info.outputs);
+    const boxes = hours ? currentHourBoxes(allBoxes) : allBoxes;
     const tbr = tbrTagSpecs(indicator.info.guide, indicator.parameters);
     const tags = guide
       ? buildSessionTags(points, boxes, DEFAULT_CHART_TIME_ZONE)
-      : tbr.length ? buildTbrTags(points, tbr, DEFAULT_CHART_TIME_ZONE) : [];
+      : tbr.length
+        ? buildTbrTags(points, tbr, DEFAULT_CHART_TIME_ZONE)
+        : hours ? buildHourTags(points, hours, DEFAULT_CHART_TIME_ZONE) : [];
     this.chartManager.setSessionLevels(id, PRICE_SERIES_KEY, segments, undefined, boxes, tags);
     // Engulfing candles highlight the levels other indicators draw, so redraw them.
     for (const [otherId] of this.levelPoints) {

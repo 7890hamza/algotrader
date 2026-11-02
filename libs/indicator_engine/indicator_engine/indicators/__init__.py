@@ -6,6 +6,7 @@ from .bbands import BBANDS
 from .currency_strength import CurrencyStrength
 from .current_day_ohl import CurrentDayOHL
 from .engulfing import Engulfing
+from .hour_stats import HourStats
 from .macd import MACD
 from .rsi import RSI
 from .session_sdev import CmeOpenSDEV, SessionSDEV
@@ -25,4 +26,5 @@ __all__ = [
     "AmTBR",
     "AlnTBR",
     "Engulfing",
+    "HourStats",
 ]

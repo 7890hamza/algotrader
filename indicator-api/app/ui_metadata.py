@@ -285,6 +285,70 @@ def _current_day_ohl_metadata() -> dict:
     }
 
 
+# ES 2016-2025 hour stats (AMP 1-minute): breaches of the prior hour high / low per New York
+# hour, share that came back to the hour open before the hour ended, and the same by the
+# segment of the breach ("0" = minutes 0-19, "1" = 20-39, "2" = 40-59) as [came back %, breaches].
+HOUR_RATES: dict[str, dict] = {
+    "8": {"n": 2068, "rev": 63.1, "segs": {"0": [73.8, 1373], "1": [48.8, 535], "2": [19.4, 160]}},
+    "9": {"n": 2257, "rev": 74.3, "segs": {"0": [85.8, 1200], "1": [65.9, 907], "2": [34.0, 150]}},
+    "10": {"n": 2152, "rev": 61.5, "segs": {"0": [70.5, 1687], "1": [36.0, 336], "2": [10.9, 129]}},
+    "11": {"n": 1905, "rev": 56.4, "segs": {"0": [70.7, 1318], "1": [29.7, 390], "2": [13.7, 197]}},
+    "12": {"n": 1894, "rev": 56.8, "segs": {"0": [69.7, 1305], "1": [36.2, 376], "2": [14.1, 213]}},
+    "13": {"n": 1951, "rev": 58.9, "segs": {"0": [71.2, 1352], "1": [37.4, 409], "2": [18.4, 190]}},
+    "14": {"n": 2024, "rev": 61.0, "segs": {"0": [71.8, 1481], "1": [39.8, 352], "2": [16.2, 191]}},
+    "15": {"n": 2116, "rev": 67.6, "segs": {"0": [78.0, 1463], "1": [55.0, 393], "2": [28.5, 260]}},
+}
+
+
+def _hour_stats_metadata() -> dict:
+    """Hour open (gold), prior hour high / low (grey), breach arrow, "Back" diamond, zones."""
+    grey = "#8A919C"
+    outputs: dict[str, dict] = {
+        "open": {
+            "type": "level",
+            "label": "Hour Open",
+            "labelColor": SDEV_LABEL_COLOR,
+            "showPrice": True,
+            "markerFrom": "revert_at",
+            "markerColor": "#F2D16B",
+            "markerText": "Back",
+            "plotOptions": {"lineWidth": 1, "lineStyle": 0, "color": "#E9A23B"},
+        },
+    }
+    for key, label, touch, value, arrow in (
+        ("ph", "Prior H", "high", 1, "#3FB950"),
+        ("pl", "Prior L", "low", -1, "#E0574A"),
+    ):
+        outputs[key] = {
+            "type": "level",
+            "label": label,
+            "labelColor": SDEV_LABEL_COLOR,
+            "showPrice": True,
+            "touch": touch,
+            "touchWhen": {"key": "side", "equals": value},
+            "touchShape": "arrow",
+            "touchText": "Hit",
+            "touchColor": arrow,
+            "plotOptions": {"lineWidth": 1, "lineStyle": 0, "color": grey},
+        }
+    for zone, title, color in (
+        ("stretch", "Stretch (MAE)", "#3FB950"),
+        ("follow", "Follow-through (MFE)", "#E9C46A"),
+    ):
+        for edge, words in (("near", "median"), ("far", "P90")):
+            outputs[f"{zone}_{edge}"] = {
+                "type": "box",
+                "box": f"hour_{zone}",
+                "edge": edge,
+                "label": title,
+                "edgeLabel": f"{title} · {words}",
+                "plotOptions": {"color": color, "fillOpacity": 0.1},
+            }
+    # The chart draws the zones for the current hour only; past hours show them on hover.
+    guide = {"kind": "hour_stats", "source": "ES 2016-2025", "hours": HOUR_RATES}
+    return {"overlay": True, "outputs": outputs, "guide": guide}
+
+
 def _engulfing_metadata() -> dict:
     """Engulfing candles are drawn by the chart's price primitive from the raw outputs."""
     return {
@@ -364,7 +428,8 @@ def _aln_metadata() -> dict:
                 "box": key,
                 "edge": edge,
                 "label": label,
-                "plotOptions": {"color": color, "lineWidth": 1},
+                # Hollow: outline only, so the candles inside stay easy to read.
+                "plotOptions": {"color": color, "lineWidth": 1, "fillOpacity": 0},
             }
     for name in (
         "ref_asia_high",
@@ -475,4 +540,5 @@ UI_METADATA: dict[str, dict] = {
     "am_tbr": _am_tbr_metadata(),
     "aln_tbr": _aln_tbr_metadata(),
     "engulfing": _engulfing_metadata(),
+    "hour_stats": _hour_stats_metadata(),
 }

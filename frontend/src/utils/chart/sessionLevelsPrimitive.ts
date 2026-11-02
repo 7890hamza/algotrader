@@ -63,7 +63,7 @@ class SessionBoxesRenderer implements IPrimitivePaneRenderer {
           const height = Math.max(1, bottom - top);
           context.fillStyle = withAlpha(box.color, box.fillOpacity ?? BOX_FILL_ALPHA);
           context.fillRect(left, top, width, height);
-          context.strokeStyle = withAlpha(box.color, 0.75);
+          context.strokeStyle = withAlpha(box.color, box.fillOpacity === 0 ? 1 : 0.75);
           context.lineWidth = 1;
           context.strokeRect(crisp(left), crisp(top), Math.round(width), Math.round(height));
         }
@@ -118,6 +118,7 @@ class SessionTagsRenderer implements IPrimitivePaneRenderer {
       ctx.save();
       ctx.textBaseline = 'middle';
       const chipH = 18;
+      let card: { tag: SessionTag; centerX: number; y: number; top: number } | null = null;
       for (const { tag, centerX, y, hovered } of this.tags) {
         const [patternBg, patternFg] = TAG_COLORS[tag.pattern] ?? TAG_COLORS[1];
         const bg = tag.chipBg ?? patternBg;
@@ -150,7 +151,11 @@ class SessionTagsRenderer implements IPrimitivePaneRenderer {
           ctx.fillText(mark, x0 + 6 + dateW + chipW, top + chipH / 2);
         }
 
-        if (!hovered) continue;
+        if (hovered) card = { tag, centerX, y, top };
+      }
+      // The recap card goes on last so no other chip is drawn over it.
+      if (card) {
+        const { tag, centerX, y, top } = card;
         ctx.font = TAG_TEXT_FONT;
         const lineH = 17;
         const width = Math.max(...tag.lines.map((line) => ctx.measureText(line).width)) + 20;
