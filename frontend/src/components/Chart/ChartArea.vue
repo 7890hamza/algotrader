@@ -4,7 +4,10 @@
       ref="chartContainer"
       id="lightweight-chart"
       class="chart-container"
-      :class="{ 'chart-container--measure-mode': interactionMode === 'measure' }"
+      :class="{
+        'chart-container--measure-mode': interactionMode === 'measure',
+        'chart-container--measure-mode chart-container--position-mode': interactionMode === 'long' || interactionMode === 'short',
+      }"
     />
 
     <Teleport
@@ -44,6 +47,17 @@
       <span class="legend-value">L: <span ref="legendLow">-</span></span>
       <span class="legend-value">C: <span ref="legendClose">-</span></span>
     </span>
+
+    <position-tool-card
+      v-if="ptState && ptModel && ptSpec"
+      :state="ptState"
+      :model="ptModel"
+      :spec="ptSpec"
+      @flip="positionTool?.flip()"
+      @remove="positionTool?.remove()"
+      @qty="(qty: number) => positionTool?.update({ qty })"
+      @point-value="(value: number | null) => positionTool?.setCustomPointValue(value)"
+    />
 
     <aln-guide-overlay :time-zone="chartTimeZone" />
     <tbr-stats-overlay />
@@ -116,6 +130,11 @@ import AlnGuideOverlay from "@/components/Chart/AlnGuideOverlay.vue";
 import TbrStatsOverlay from "@/components/Chart/TbrStatsOverlay.vue";
 import AmTbrGuideOverlay from "@/components/Chart/AmTbrGuideOverlay.vue";
 import { CloseCircleOutline } from "@/icons";
+import PositionToolCard from "@/components/Chart/PositionToolCard.vue";
+import { PositionToolController } from "@/utils/chart/positionToolController";
+import type { PositionModel, PositionToolState } from "@/utils/chart/positionTool";
+import type { ContractSpec } from "@/utils/chart/contractSpecs";
+import { fetchBrokerSymbolSpec } from "@/api/brokerClient";
 
 const WHEEL_SETTLE_MS = 250;
 
@@ -174,6 +193,10 @@ interface ChartAreaData {
   hoveredBacktestMarker: string | null;
   measurementPaneElement: HTMLElement | null;
   activeMeasurement: MeasurementDragState | null;
+  positionTool: PositionToolController | null;
+  ptState: PositionToolState | null;
+  ptModel: PositionModel | null;
+  ptSpec: ContractSpec | null;
 }
 
 function isOhlcLegendPoint(value: unknown): value is OhlcLegendPoint {
@@ -192,6 +215,7 @@ export default defineComponent({
     TbrStatsOverlay,
     AmTbrGuideOverlay,
     CloseCircleOutline,
+    PositionToolCard,
     Indicator,
     NButton,
     NIcon,
@@ -203,6 +227,8 @@ export default defineComponent({
       default: DEFAULT_CHART_INTERACTION_MODE,
     },
   },
+
+  emits: ["placed"],
 
   data(): ChartAreaData {
     return {
@@ -236,6 +262,10 @@ export default defineComponent({
       hoveredBacktestMarker: null,
       measurementPaneElement: null,
       activeMeasurement: null,
+      positionTool: null,
+      ptState: null,
+      ptModel: null,
+      ptSpec: null,
     };
   },
 
@@ -285,11 +315,13 @@ export default defineComponent({
       if (newMinMove && newMinMove > 0) {
         this.setMinMove(newMinMove);
       }
+      this.positionTool?.setMarket(this.currentMarketStore.symbol, newMinMove);
     },
 
     currentMarketKey: {
       handler(newKey: string, oldKey: string | undefined) {
         this.shouldScrollToRealTime = true;
+        this.syncPositionToolMarket();
 
         if (newKey !== oldKey) {
           this.syncChartSession();
@@ -324,6 +356,28 @@ export default defineComponent({
   },
 
   created(): void {
+    this.positionTool = markRaw(new PositionToolController({
+      getSeries: () => this.ohlcSeriesRef,
+      coordinateToPrice: (y) => this.chartInfrastructure.coordinateToCandlestickPrice(y),
+      coordinateToTime: (x) => {
+        const logical = this.chartInfrastructure.coordinateToLogical(x);
+        const bars = this.candlesticksStore.data;
+        if (logical === null || !bars.length) return null;
+        const i = Math.max(0, Math.min(bars.length - 1, Math.round(logical)));
+        return Math.floor(bars[i].timestamp_ms / 1000);
+      },
+      recentBars: () => this.candlesticksStore.data.slice(-20),
+      setDragScroll: (enabled) => {
+        this.chartInfrastructure.setMouseDragScrollEnabled(enabled && this.interactionMode !== 'measure');
+      },
+      onChange: (state, model, spec) => {
+        this.ptState = state;
+        this.ptModel = model;
+        this.ptSpec = spec;
+      },
+      onPlaced: () => this.$emit("placed"),
+    }));
+    this.positionTool.setMarket(this.currentMarketStore.symbol, this.currentMarketMinMove);
     this.chartSession = markRaw(createChartSession(this.createChartSessionAdapter()));
     this.syncChartSession();
   },
@@ -357,6 +411,7 @@ export default defineComponent({
     }
     this.cancelMeasurementOverlay();
     this.setMeasurementPaneElement(null);
+    this.positionTool?.destroy();
     const chartContainer = this.getChartContainer();
     if (chartContainer) {
       chartContainer.removeEventListener("wheel", this.onWheelPassive);
@@ -518,8 +573,19 @@ export default defineComponent({
       }
     },
 
+    /** Point the risk-to-reward tool at the current symbol and fetch its contract size from MT5. */
+    syncPositionToolMarket(): void {
+      const symbol = this.currentMarketStore.symbol;
+      this.positionTool?.setMarket(symbol, this.currentMarketMinMove);
+      if (symbol) {
+        void fetchBrokerSymbolSpec(symbol).then((spec) => this.positionTool?.setBrokerSpec(symbol, spec));
+      }
+    },
+
     applyInteractionMode(): void {
       this.chartInfrastructure.setMouseDragScrollEnabled(this.interactionMode !== 'measure');
+      const mode = this.interactionMode;
+      this.positionTool?.setPlacing(mode === 'long' || mode === 'short' ? mode : null);
 
       if (this.interactionMode !== 'measure') {
         this.cancelMeasurementOverlay();
@@ -664,6 +730,8 @@ export default defineComponent({
     async syncBacktestOverlayTarget(): Promise<void> {
       const paneHtmlElement = await this.chartInfrastructure.chartManager.getPaneHtmlElement(0);
       this.setMeasurementPaneElement(paneHtmlElement);
+      this.positionTool?.setPane(paneHtmlElement);
+      this.positionTool?.syncSeries();
       this.backtestOverlayTarget = paneHtmlElement
         ? getOrCreatePaneOverlayWrapper(paneHtmlElement)
         : null;

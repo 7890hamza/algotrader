@@ -74,6 +74,15 @@ RECONNECT_DELAY_SECONDS = 3.0
 ACCOUNT_TRADE_MODE_DEMO = 0
 
 
+
+def _positive(value: object) -> float | None:
+    """A float when MT5 gave a usable positive number, else None."""
+    try:
+        number = float(value)  # type: ignore[arg-type]
+    except (TypeError, ValueError):
+        return None
+    return number if number > 0 else None
+
 class TradingDisabledError(RuntimeError):
     """Raised for any trading command: this bridge only reads market data."""
 
@@ -241,6 +250,10 @@ class Mt5Client(BrokerPort, MarketDataPort):
             symbol_name=alias,
             digits=int(info.digits),
             pip_position=int(info.digits),
+            tick_size=_positive(getattr(info, "trade_tick_size", None)),
+            tick_value=_positive(getattr(info, "trade_tick_value", None)),
+            contract_size=_positive(getattr(info, "trade_contract_size", None)),
+            currency=getattr(info, "currency_profit", None) or None,
         )
         self._symbol_info_cache[alias] = result
         return result

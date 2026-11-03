@@ -7,6 +7,7 @@ export const PANE_MESSAGE_SOURCE = 'algotrader-pane';
 
 export type PaneMessage =
   | { type: 'activate' }
+  | { type: 'placed' }
   | { type: 'state'; symbol: string | null; timeframe: string }
   | { type: 'open-modal'; name: string }
   | { type: 'set-timeframe'; value: string }

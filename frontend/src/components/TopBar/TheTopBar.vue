@@ -15,6 +15,26 @@
 
     <div class="chart-interaction-controls" role="group" aria-label="Chart interaction mode">
       <n-button
+        size="small"
+        round
+        class="position-button position-button--long"
+        :class="{ 'position-button--active': isChartInteractionModeSelected('long') }"
+        data-testid="chart-mode-long"
+        title="Long position: click the chart at your entry"
+        :aria-pressed="isChartInteractionModeSelected('long')"
+        @click="toggleMode('long')"
+      >Long</n-button>
+      <n-button
+        size="small"
+        round
+        class="position-button position-button--short"
+        :class="{ 'position-button--active': isChartInteractionModeSelected('short') }"
+        data-testid="chart-mode-short"
+        title="Short position: click the chart at your entry"
+        :aria-pressed="isChartInteractionModeSelected('short')"
+        @click="toggleMode('short')"
+      >Short</n-button>
+      <n-button
         circle
         class="chart-interaction-mode-button"
         :class="{
@@ -142,6 +162,10 @@ function chartInteractionModeIconColor(mode: ChartInteractionMode): string | und
 function selectChartInteractionMode(mode: ChartInteractionMode): void {
   emit('update:chartInteractionMode', mode);
 }
+
+function toggleMode(mode: ChartInteractionMode): void {
+  emit('update:chartInteractionMode', props.chartInteractionMode === mode ? 'pan' : mode);
+}
 </script>
 
 <style scoped>
@@ -159,6 +183,11 @@ function selectChartInteractionMode(mode: ChartInteractionMode): void {
   gap: 6px;
   margin-left: auto;
 }
+
+.position-button--long { color: #3fb950; }
+.position-button--short { color: #e0574a; }
+.position-button--active.position-button--long { background: rgba(63, 185, 80, 0.2); }
+.position-button--active.position-button--short { background: rgba(224, 87, 74, 0.2); }
 
 .active-chart-note {
   align-self: center;

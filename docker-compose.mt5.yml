@@ -36,6 +36,10 @@ services:
   frontend:
     # Come back with the rest of the stack after a reboot.
     restart: always
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     environment:
       # Pick up code changes after a git pull (Windows doesn't send file events).
       VITE_USE_POLLING: "true"
+      # Contract sizes (tick value) for the risk-to-reward tool come from the MT5 bridge.
+      VITE_PROXY_BROKER_TARGET: http://host.docker.internal:8050

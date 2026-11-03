@@ -26,6 +26,7 @@
           id="chart-area"
           ref="chartArea"
           :interaction-mode="chartInteractionMode"
+          @placed="onPlaced"
         />
       </section>
       <iframe
@@ -45,6 +46,7 @@
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import ChartArea from '@/components/Chart/ChartArea.vue';
 import {
+  CHART_INTERACTION_MODES,
   DEFAULT_CHART_INTERACTION_MODE,
   type ChartInteractionMode,
 } from '@/components/Chart/chartInteractionMode';
@@ -118,11 +120,18 @@ function reportState(): void {
   });
 }
 
+/** A plan was placed: go back to pan (and tell the main page when this is the second chart). */
+function onPlaced(): void {
+  chartInteractionMode.value = 'pan';
+  if (isSecondPane) postPaneMessage(window.parent, { type: 'placed' });
+}
+
 function onMessage(event: MessageEvent): void {
   const message = readPaneMessage(event);
   if (!message) return;
   if (!isSecondPane) {
     if (message.type === 'activate') activePane.value = '2';
+    if (message.type === 'placed') chartInteractionMode.value = 'pan';
     if (message.type === 'state') {
       secondState.value = { symbol: message.symbol, timeframe: message.timeframe };
       sendToSecond({ type: 'set-interaction-mode', mode: chartInteractionMode.value });
@@ -133,8 +142,8 @@ function onMessage(event: MessageEvent): void {
   if (message.type === 'set-timeframe' && isTimeframeCode(message.value)) {
     currentTimeframeStore.setCurrentTimeframe({ label: message.value, value: message.value });
   }
-  if (message.type === 'set-interaction-mode' && (message.mode === 'pan' || message.mode === 'measure')) {
-    chartInteractionMode.value = message.mode;
+  if (message.type === 'set-interaction-mode' && (CHART_INTERACTION_MODES as readonly string[]).includes(message.mode)) {
+    chartInteractionMode.value = message.mode as ChartInteractionMode;
   }
 }
 

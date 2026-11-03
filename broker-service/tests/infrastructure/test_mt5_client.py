@@ -80,7 +80,15 @@ class FakeMt5:
 
     def symbol_info(self, name):
         if name == "@EP":
-            return SimpleNamespace(name="@EP", digits=2, visible=False)
+            return SimpleNamespace(
+                name="@EP",
+                digits=2,
+                visible=False,
+                trade_tick_size=0.25,
+                trade_tick_value=12.5,
+                trade_contract_size=50.0,
+                currency_profit="USD",
+            )
         return None
 
     def symbol_select(self, name, enable):
@@ -154,6 +162,7 @@ class Mt5ClientTests(unittest.IsolatedAsyncioTestCase):
         client = await connected_client(FakeMt5())
         symbol = await client.get_symbol(AccountId(1), "es")
         self.assertEqual((symbol.symbol_name, symbol.digits), ("ES", 2))
+        self.assertEqual((symbol.tick_size, symbol.tick_value, symbol.currency), (0.25, 12.5, "USD"))
         self.assertIsNone(await client.get_symbol(AccountId(1), "NOPE"))
         names = [d.symbol_name for d in await client.list_symbols(AccountId(1))]
         self.assertEqual(names, ["ES", "EURUSD"])  # "@EP" is exposed only as its alias

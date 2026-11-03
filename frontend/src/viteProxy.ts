@@ -39,6 +39,13 @@ export function createDevServerProxy(env: DevServerEnv): Record<string, ProxyOpt
       changeOrigin: true,
       rewrite: (path) => path.replace(/^\/api\/backtester/, ''),
     },
+    // The MT5 bridge runs natively on Windows (host.docker.internal from the frontend container).
+    '/api/broker': {
+      target: env.VITE_PROXY_BROKER_TARGET || env.BROKER_SERVICE_BASE_URL || 'http://localhost:8050',
+      changeOrigin: true,
+      headers: { 'X-Account-Id': env.ACCOUNT_ID || '1' },
+      rewrite: (path) => path.replace(/^\/api\/broker/, ''),
+    },
     '/api/indicator-api': {
       target: serviceTarget(
         env,
