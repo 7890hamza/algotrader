@@ -191,53 +191,58 @@ ALN_TBR_SESSIONS = [
 
 
 def _aln_tbr_metadata() -> dict:
-    """Open, +/- 0.25 and zones per ALN session, each in its session color."""
-    zones = (
-        ("stretch", "stretch (MAE)", 0.16),
-        ("runaway", "no return (MAE)", 0.07),
-        ("follow", "follow-through (MFE)", 0.11),
-    )
-    outputs: dict[str, dict] = {}
-    for key, label, color, _, _, _ in ALN_TBR_SESSIONS:
-        outputs[f"{key}_open"] = {
+    """Each session drawn exactly like AM TBR: dotted open and +/-0.25 lines with white labels,
+    a "Hit" arrow and a "Back" diamond, and the green stretch (MAE), red no-return (MAE) and
+    gold follow-through (MFE) boxes with median / P75 / P90 labels."""
+    zones = {
+        "stretch": ("Stretch (MAE)", "#3FB950"),
+        "runaway": ("No return (MAE)", "#E0574A"),
+        "follow": ("Follow-through (MFE)", "#E9C46A"),
+    }
+
+    def level(label: str, color: str) -> dict:
+        return {
             "type": "level",
-            "label": f"{label} Open",
+            "label": label,
             "labelColor": SDEV_LABEL_COLOR,
             "showPrice": True,
+            "plotOptions": {"lineWidth": 1, "lineStyle": DOTTED, "color": color},
+        }
+
+    outputs: dict[str, dict] = {}
+    for key, label, _color, _, _, _ in ALN_TBR_SESSIONS:
+        name = f"{label} TBR"
+        outputs[f"{key}_open"] = {
+            **level(f"{name} Open", SDEV_OPEN_COLOR),
             "markerFrom": f"{key}_revert_at",
             "markerColor": "#F2D16B",
             "markerText": "Back",
-            "plotOptions": {"lineWidth": 1, "lineStyle": 0, "color": color},
         }
         for side, sign, touch, value, arrow in (
             ("up", "+", "high", 1, "#3FB950"),
             ("dn", "-", "low", -1, "#E0574A"),
         ):
             outputs[f"{key}_{side}"] = {
-                "type": "level",
-                "label": f"{label} {sign}0.25",
-                "labelColor": SDEV_LABEL_COLOR,
-                "showPrice": True,
+                **level(f"{name} {sign}0.25", SDEV_LEVEL_COLOR),
                 "touch": touch,
                 "touchWhen": {"key": f"{key}_side", "equals": value},
                 "touchShape": "arrow",
                 "touchText": "Hit",
                 "touchColor": arrow,
-                "plotOptions": {"lineWidth": 1, "lineStyle": DOTTED, "color": color},
             }
-        for zone, words, opacity in zones:
-            for edge, share in (("near", "median"), ("far", "P90")):
+        for zone, (title, color) in zones.items():
+            for edge, words in (("near", "median"), ("far", "P90")):
                 outputs[f"{key}_{zone}_{edge}"] = {
                     "type": "box",
                     "box": f"{key}_{zone}",
                     "edge": edge,
-                    "label": f"{label} {words}",
-                    "edgeLabel": f"{label} {words} · {share}",
-                    "plotOptions": {"color": color, "fillOpacity": opacity},
+                    "label": title,
+                    "edgeLabel": f"{title} · {words}",
+                    "plotOptions": {"color": color, "fillOpacity": 0.16},
                 }
             outputs[f"{key}_{zone}_mid"] = {
                 "type": "level",
-                "label": f"{label} {words} · P75",
+                "label": f"{title} · P75",
                 "labelColor": color,
                 "showPrice": True,
                 "extend": False,

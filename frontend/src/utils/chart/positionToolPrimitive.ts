@@ -66,6 +66,22 @@ class PositionRenderer implements IPrimitivePaneRenderer {
           ctx.strokeRect(x0 - 4 + 0.5, row.y - 4 + 0.5, 7, 7);
         }
       }
+      // Remove button on the entry line, just right of its drag handle.
+      const cx = x0 + 10;
+      const cy = entryY - 8;
+      ctx.fillStyle = 'rgba(19, 23, 34, 0.9)';
+      ctx.fillRect(cx, cy, 16, 16);
+      ctx.strokeStyle = 'rgba(255, 255, 255, 0.35)';
+      ctx.lineWidth = 1;
+      ctx.strokeRect(cx + 0.5, cy + 0.5, 15, 15);
+      ctx.strokeStyle = '#e6e6e6';
+      ctx.lineWidth = 1.5;
+      ctx.beginPath();
+      ctx.moveTo(cx + 4.5, cy + 4.5);
+      ctx.lineTo(cx + 11.5, cy + 11.5);
+      ctx.moveTo(cx + 11.5, cy + 4.5);
+      ctx.lineTo(cx + 4.5, cy + 11.5);
+      ctx.stroke();
       if (!valid) {
         ctx.font = BOLD;
         ctx.fillStyle = '#E0574A';
@@ -146,6 +162,14 @@ export class PositionToolPrimitive implements ISeriesPrimitive<Time> {
       if (y !== null) rows.push({ key: l.key, y, color: l.color, dashed: l.dashed, label: l.label });
     }
     return new PositionRenderer({ x0, rows, entryY, stopY, targetY, valid: m.valid });
+  }
+
+  /** True when (x, y) is on the remove button drawn on the entry line. */
+  hitClose(x: number, y: number): boolean {
+    const x0 = this.x0();
+    const ey = this.state ? this.y(this.state.entry) : null;
+    if (x0 === null || ey === null) return false;
+    return x >= x0 + 8 && x <= x0 + 28 && y >= ey - 10 && y <= ey + 10;
   }
 
   /** The handle under a pane y coordinate (entry wins ties), if any. */

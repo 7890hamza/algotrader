@@ -56,7 +56,7 @@ function onPointValue(event: Event): void {
 <style scoped>
 .ptc {
   position: absolute;
-  top: 74px;
+  bottom: 44px;
   left: 10px;
   z-index: 7;
   min-width: 250px;

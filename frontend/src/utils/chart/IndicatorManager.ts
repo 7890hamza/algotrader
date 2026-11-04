@@ -215,9 +215,8 @@ export class IndicatorManager {
     const hours = readHourStatsGuide(indicator.info.guide);
     const allBoxes = buildSessionBoxes(points, indicator.info.outputs);
     const lastTime = Math.floor(Math.max(...points.map((p) => Number(p.timestamp_ms))) / 1000);
-    // Hour Stats and the TBRs keep past sessions quiet: boxes only for the session running now.
-    const kind = (indicator.info.guide as JsonObject | undefined)?.kind;
-    const quiet = hours !== null || kind === 'tbr' || kind === 'tbr_am';
+    // Hour Stats keeps past hours quiet: boxes only for the hour running now.
+    const quiet = hours !== null;
     const boxes = quiet ? currentHourBoxes(allBoxes, lastTime) : allBoxes;
     const tbr = tbrTagSpecs(indicator.info.guide, indicator.parameters);
     const tags = guide

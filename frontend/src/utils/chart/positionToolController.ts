@@ -155,8 +155,9 @@ export class PositionToolController {
   private readonly onHover = (event: PointerEvent): void => {
     if (!this.pane || this.dragging) return;
     const p = this.local(event);
+    const close = p ? this.primitive.hitClose(p.x, p.y) : false;
     const over = p ? this.primitive.hit(p.y) : null;
-    this.pane.style.cursor = over ? 'ns-resize' : this.placing ? 'crosshair' : '';
+    this.pane.style.cursor = close ? 'pointer' : over ? 'ns-resize' : this.placing ? 'crosshair' : '';
   };
 
   private readonly onPointerDown = (event: PointerEvent): void => {
@@ -173,6 +174,12 @@ export class PositionToolController {
       event.preventDefault();
       this.save();
       this.host.onPlaced();
+      return;
+    }
+    if (this.state && this.primitive.hitClose(p.x, p.y)) {
+      event.stopPropagation();
+      event.preventDefault();
+      this.remove();
       return;
     }
     const handle = this.primitive.hit(p.y);

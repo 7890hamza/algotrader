@@ -588,9 +588,7 @@ export function buildTbrTags(
       const live = index === runs.length - 1 && last === sorted[sorted.length - 1];
       const revertMs = num(last, spec.revertKey);
       let top = -Infinity;
-      // Zones are drawn only for the live session, so past chips sit just above the lines.
-      const keys = live ? spec.priceKeys : spec.priceKeys.filter((k) => !/(stretch|runaway|follow)_/.test(k));
-      for (const p of session) for (const k of keys) { const v = num(p, k); if (v !== null && v > top) top = v; }
+      for (const p of session) for (const k of spec.priceKeys) { const v = num(p, k); if (v !== null && v > top) top = v; }
       const date = new Date(startMs).toLocaleDateString('en-US', { month: '2-digit', day: '2-digit', timeZone });
       const tag: SessionTag = {
         id: `tbr-${spec.openKey}@${startMs}`,
