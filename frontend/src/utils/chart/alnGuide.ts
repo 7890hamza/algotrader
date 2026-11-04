@@ -19,6 +19,8 @@ export interface SessionBox {
   compact?: boolean;
   /** Fill opacity, 0-1 (default 0.07). */
   fillOpacity?: number;
+  /** Draw the box without any edge labels (Breaks' prior-day box). */
+  noLabels?: boolean;
 }
 
 export interface AlnPatternStats {
@@ -134,7 +136,7 @@ export function buildSessionBoxes(
   const sorted = sortedPoints(points);
   const maxGap = barSeconds(sorted) * MAX_GAP_BARS;
   interface Edge { key: string; label?: string }
-  interface Group { edges: Edge[]; color: string; label: string; fillOpacity?: number }
+  interface Group { edges: Edge[]; color: string; label: string; fillOpacity?: number; noLabels?: boolean; compact?: boolean }
   const groups = new Map<string, Group>();
   for (const [key, output] of Object.entries(outputs)) {
     if (output.type !== 'box' || typeof output.box !== 'string') continue;
@@ -144,6 +146,8 @@ export function buildSessionBoxes(
       color: typeof output.plotOptions?.color === 'string' ? output.plotOptions.color : '#9aa4b2',
       label: typeof output.label === 'string' ? output.label : output.box,
       fillOpacity: typeof opacity === 'number' ? opacity : undefined,
+      noLabels: output.boxLabels === false ? true : undefined,
+      compact: output.boxCompact === true ? true : undefined,
     };
     // Edges are "high"/"low" (fixed) or any two names (e.g. "near"/"far"), sorted by price per bar.
     group.edges.push({ key, label: typeof output.edgeLabel === 'string' ? output.edgeLabel : undefined });
@@ -178,6 +182,7 @@ export function buildSessionBoxes(
       current = {
         id: `${name}@${time}`, startTime: time, endTime: time, high, low, color: group.color, label: group.label,
         highLabel: top.label, lowLabel: bottom.label, fillOpacity: group.fillOpacity,
+        ...(group.noLabels ? { noLabels: true } : {}), ...(group.compact ? { compact: true } : {}),
       };
     }
     if (current) boxes.push(current);
@@ -451,6 +456,8 @@ export interface SessionTag {
   chipFg?: string;
   /** Draw a faint dotted line at the start of this tag's window (hour separators). */
   separator?: boolean;
+  /** "start": the chip begins at the window's left edge (and shows even when the window is narrow). */
+  anchor?: 'start';
 }
 
 const SESSION_LOOKBACK_SECONDS = 13 * 3600;

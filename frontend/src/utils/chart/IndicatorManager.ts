@@ -12,6 +12,7 @@ import {
   type SessionTag,
 } from './alnGuide';
 import { DEFAULT_CHART_TIME_ZONE } from './chartTimeZone';
+import { buildBreaksTags, readBreaksGuide, tidyBreakSegments } from './breaks';
 import { buildHourTags, currentHourBoxes, readHourStatsGuide, tidyHourSegments } from './hourStats';
 import {
   buildEngulfingLines,
@@ -213,18 +214,24 @@ export class IndicatorManager {
     const guide = readGuideConfig(indicator.info.guide);
     if (guide) segments.push(...buildAlnGuideLines(points, guide));
     const hours = readHourStatsGuide(indicator.info.guide);
+    const breakRates = readBreaksGuide(indicator.info.guide);
     const allBoxes = buildSessionBoxes(points, indicator.info.outputs);
     const lastTime = Math.floor(Math.max(...points.map((p) => Number(p.timestamp_ms))) / 1000);
     // Hour Stats keeps past hours quiet: boxes only for the hour running now.
     const quiet = hours !== null;
-    const boxes = quiet ? currentHourBoxes(allBoxes, lastTime) : allBoxes;
+    // Breaks: only the IB box that is still forming keeps its labels.
+    const boxes = quiet
+      ? currentHourBoxes(allBoxes, lastTime)
+      : breakRates ? allBoxes.map((b) => (b.endTime === lastTime ? b : { ...b, noLabels: true })) : allBoxes;
     const tbr = tbrTagSpecs(indicator.info.guide, indicator.parameters);
     const tags = guide
       ? buildSessionTags(points, boxes, DEFAULT_CHART_TIME_ZONE)
       : tbr.length
         ? buildTbrTags(points, tbr, DEFAULT_CHART_TIME_ZONE)
-        : hours ? buildHourTags(points, hours, DEFAULT_CHART_TIME_ZONE) : [];
-    const drawn = quiet ? tidyHourSegments(segments, lastTime) : segments;
+        : hours
+          ? buildHourTags(points, hours, DEFAULT_CHART_TIME_ZONE)
+          : breakRates ? buildBreaksTags(points, breakRates, DEFAULT_CHART_TIME_ZONE) : [];
+    const drawn = quiet ? tidyHourSegments(segments, lastTime) : breakRates ? tidyBreakSegments(segments, lastTime) : segments;
     this.chartManager.setSessionLevels(id, PRICE_SERIES_KEY, drawn, undefined, boxes, tags);
     // Engulfing candles highlight the levels other indicators draw, so redraw them.
     for (const [otherId] of this.levelPoints) {

@@ -102,7 +102,8 @@ export class PositionToolController {
       // The old series is already gone.
     }
     this.attachedTo = series;
-    series?.attachPrimitive(this.primitive);
+    // Test doubles of the series may not implement primitives.
+    series?.attachPrimitive?.(this.primitive);
     this.render();
   }
 

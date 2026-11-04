@@ -70,7 +70,7 @@ class SessionBoxesRenderer implements IPrimitivePaneRenderer {
         }
       } else {
         for (const { box, left, right, top, bottom } of this.boxes) {
-          if (right - left < 40 && !box.compact) continue;
+          if (box.noLabels || (right - left < 40 && !box.compact)) continue;
           if (box.compact) {
             // Quiet labels tucked inside the box corners.
             context.font = COMPACT_FONT;
@@ -111,6 +111,8 @@ interface DrawableTag {
   centerX: number;
   y: number;
   hovered: boolean;
+  /** Width of the hover window in px. */
+  span?: number;
 }
 
 function roundRect(ctx: CanvasRenderingContext2D, x: number, y: number, w: number, h: number, r: number): void {
@@ -160,7 +162,8 @@ class SessionTagsRenderer implements IPrimitivePaneRenderer {
         const chipW = ctx.measureText(chip).width + 10;
         const markW = mark ? ctx.measureText(mark).width : 0;
         const total = dateW + chipW + markW + 12;
-        const x0 = centerX - total / 2;
+        // Chips stay inside the pane; "start" chips begin at their window's left edge.
+        const x0 = Math.max(2, Math.min(mediaSize.width - total - 2, tag.anchor === 'start' ? centerX : centerX - total / 2));
         const top = y - chipH;
         roundRect(ctx, x0, top, total, chipH, 4);
         ctx.fillStyle = hovered ? 'rgba(30, 35, 48, 0.95)' : 'rgba(19, 23, 34, 0.85)';
@@ -180,7 +183,7 @@ class SessionTagsRenderer implements IPrimitivePaneRenderer {
           ctx.fillText(mark, x0 + 6 + dateW + chipW, top + chipH / 2);
         }
 
-        if (hovered) card = { tag, centerX, y, top };
+        if (hovered) card = { tag, centerX: x0 + total / 2, y, top };
       }
       // The recap card goes on last so no other chip is drawn over it.
       if (card) {
@@ -652,11 +655,18 @@ export class SessionLevelsPrimitive implements ISeriesPrimitive<Time> {
       if (start === null || end === null || top === null) continue;
       const left = Number(start);
       const right = Number(end);
-      if (right - left < 60) continue;
-      const hovered = this.hoverX !== null && this.hoverX >= left && this.hoverX <= right;
+      // A "start" chip (Breaks' IB) belongs to a short window, so it is drawn even when narrow
+      // and hovers over the chip's own width.
+      const isStart = tag.anchor === 'start';
+      if (!isStart && right - left < 60) continue;
+      const hoverRight = isStart ? left + 260 : right;
+      const hovered = this.hoverX !== null && this.hoverX >= left && this.hoverX <= hoverRight;
       // Above the box labels ("Asia H ...") that sit on top of each box.
-      drawables.push({ tag, centerX: (left + right) / 2, y: Number(top) - 20, hovered });
+      drawables.push({ tag, centerX: isStart ? left : (left + right) / 2, y: Number(top) - 20, hovered, span: hoverRight - left });
     }
+    // Windows can overlap (Breaks' RTH, IB and ETH chips): only the narrowest hovered one opens.
+    const open = drawables.filter((d) => d.hovered).sort((a, b) => (a.span ?? 0) - (b.span ?? 0))[0];
+    for (const d of drawables) d.hovered = d === open;
     return drawables.length > 0 || separators.length > 0 ? new SessionTagsRenderer(drawables, separators) : null;
   }
 

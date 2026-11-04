@@ -26,6 +26,7 @@ from .indicators import (
     CurrentDayOHL,
     Engulfing,
     HourStats,
+    Breaks,
     SessionSDEV,
 )
 
@@ -50,6 +51,7 @@ def _create_registry() -> IndicatorRegistry:
             AlnTBR(),
             Engulfing(),
             HourStats(),
+            Breaks(),
         ]
     )
     try:

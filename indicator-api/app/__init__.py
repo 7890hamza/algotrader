@@ -19,6 +19,7 @@ INDICATOR_MAP: dict[int, str] = {
     11: "aln_tbr",
     12: "engulfing",
     13: "hour_stats",
+    14: "breaks",
 }
 
 

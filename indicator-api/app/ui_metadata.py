@@ -361,6 +361,66 @@ def _hour_stats_metadata() -> dict:
     return {"overlay": True, "outputs": outputs, "guide": guide}
 
 
+# Breaks (IB / RTH / ETH), ES 2016-2025 1-minute data. "upper" etc. are where the open sat
+# inside the prior range (thirds) -> [high hit %, low hit %]. "held" = the far side never hit.
+BREAK_RATES: dict = {
+    "rth": {
+        "inside": {"n": 1380, "either": 82.4, "one": 73.2, "both": 9.2,
+                   "upper": [75.0, 22.8], "middle": [41.7, 37.7], "lower": [19.3, 78.6]},
+        "gap_up": {"n": 628, "held": 88.4},
+        "gap_down": {"n": 356, "held": 90.7},
+    },
+    "ib": {"n": 2307, "either": 98.1, "above": [83.3, 43.9, 1247], "below": [46.4, 81.8, 1045],
+           "ext": [0.62, 1.18]},
+    "eth": {
+        "inside": {"n": 2164, "either": 86.9,
+                   "upper": [80.0, 20.5], "middle": [48.0, 46.4], "lower": [24.3, 76.2]},
+    },
+}
+
+
+def _breaks_metadata() -> dict:
+    """pRTH (grey), IB (blue), pETH (purple dashed) lines with Hit arrows; boxes; odds chips."""
+    grey, blue, purple, green = "#8A919C", "#4C9BE8", "#B49AF0", "#3FB950"
+
+    def level(label: str, color: str, style: int = 0, touch: str | None = None,
+              when: str | None = None, extend: bool = True) -> dict:
+        out: dict = {
+            "type": "level",
+            "label": label,
+            "labelColor": SDEV_LABEL_COLOR,
+            "showPrice": True,
+            "plotOptions": {"lineWidth": 1, "lineStyle": style, "color": color},
+        }
+        if touch:
+            out.update(touch=touch, touchShape="arrow", touchText="Hit", touchColor=color)
+        if when:
+            out["touchWhen"] = {"key": when, "equals": 1}
+        if not extend:
+            out["extend"] = False
+        return out
+
+    outputs: dict[str, dict] = {
+        "prth_h": level("pRTH High", grey, touch="high", when="rth_touch_h"),
+        "prth_l": level("pRTH Low", grey, touch="low", when="rth_touch_l"),
+        "ib_h": level("IB High", blue, touch="high"),
+        "ib_l": level("IB Low", blue, touch="low"),
+        "ib_mid": level("IB Mid", blue, style=1),
+        "ib_ext_med": level("Half of days reach", green, style=1, extend=False),
+        "ib_ext_p75": level("1 in 4 days reach", green, style=1, extend=False),
+        "peth_h": level("pETH High", purple, style=2, touch="high", when="eth_touch_h"),
+        "peth_l": level("pETH Low", purple, style=2, touch="low", when="eth_touch_l"),
+    }
+    for key, edge in (("rth_box_h", "high"), ("rth_box_l", "low")):
+        outputs[key] = {"type": "box", "box": "rth_day", "edge": edge, "label": "RTH",
+                        "boxLabels": False, "plotOptions": {"color": grey, "fillOpacity": 0.04}}
+    for key, edge in (("ib_box_h", "high"), ("ib_box_l", "low")):
+        outputs[key] = {"type": "box", "box": "ib", "edge": edge, "label": "IB", "boxCompact": True,
+                        "plotOptions": {"color": blue, "fillOpacity": 0}}
+    guide = {"kind": "breaks", "source": "ES 2016-2025", "rates": BREAK_RATES}
+    return {"overlay": True, "outputs": outputs, "guide": guide}
+
+
 def _engulfing_metadata() -> dict:
     """Engulfing candles are drawn by the chart's price primitive from the raw outputs."""
     return {
@@ -553,4 +613,5 @@ UI_METADATA: dict[str, dict] = {
     "aln_tbr": _aln_tbr_metadata(),
     "engulfing": _engulfing_metadata(),
     "hour_stats": _hour_stats_metadata(),
+    "breaks": _breaks_metadata(),
 }
