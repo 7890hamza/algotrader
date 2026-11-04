@@ -162,7 +162,9 @@ class Mt5ClientTests(unittest.IsolatedAsyncioTestCase):
         client = await connected_client(FakeMt5())
         symbol = await client.get_symbol(AccountId(1), "es")
         self.assertEqual((symbol.symbol_name, symbol.digits), ("ES", 2))
-        self.assertEqual((symbol.tick_size, symbol.tick_value, symbol.currency), (0.25, 12.5, "USD"))
+        self.assertEqual(
+            (symbol.tick_size, symbol.tick_value, symbol.currency), (0.25, 12.5, "USD")
+        )
         self.assertIsNone(await client.get_symbol(AccountId(1), "NOPE"))
         names = [d.symbol_name for d in await client.list_symbols(AccountId(1))]
         self.assertEqual(names, ["ES", "EURUSD"])  # "@EP" is exposed only as its alias

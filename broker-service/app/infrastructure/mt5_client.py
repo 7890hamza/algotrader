@@ -11,8 +11,9 @@ The MetaTrader5 Python package only runs on Windows and talks to an MT5 terminal
 that is open and logged in on the same machine, so this adapter runs natively on
 Windows (see ``broker-service/MT5.md``), not inside Docker.
 
-Trading is deliberately not implemented: order, position and close commands raise
-``TradingDisabledError`` and order/position/deal queries return empty lists.
+Trading is off by default: order, position and close commands raise
+``TradingDisabledError``. With ``MT5_TRADING_ENABLED=true`` they work on demo accounts
+only (see ``mt5_trading``).
 
 All MetaTrader5 calls happen on one dedicated worker thread because the package
 keeps global, non-thread-safe state.
@@ -40,6 +41,11 @@ from app.domain.value_objects import (
     SymbolDescriptor,
     SymbolId,
     Timeframe,
+)
+from app.infrastructure import mt5_trading
+from app.infrastructure.mt5_trading import (  # noqa: F401 - re-exported for app.main
+    OrderRejectedError,
+    TradingDisabledError,
 )
 from app.infrastructure.stream_registry import TickSubscription, TrendbarSubscription
 from app.settings import Mt5Settings
@@ -83,8 +89,6 @@ def _positive(value: object) -> float | None:
         return None
     return number if number > 0 else None
 
-class TradingDisabledError(RuntimeError):
-    """Raised for any trading command: this bridge only reads market data."""
 
 
 def _url_safe(name: str) -> bool:
@@ -613,7 +617,7 @@ class Mt5Client(BrokerPort, MarketDataPort):
             continuity=self._continuity,
         )
 
-    # ------------------------------------------------------------- trading (disabled)
+    # ------------------------------------------------------------- trading (demo only, opt-in)
 
     async def list_accounts(self) -> list[Account]:
         def run() -> list[Account]:
@@ -628,14 +632,32 @@ class Mt5Client(BrokerPort, MarketDataPort):
                     balance=Decimal(str(info.balance)),
                     leverage=int(info.leverage),
                     is_live=info.trade_mode != ACCOUNT_TRADE_MODE_DEMO,
-                    access_rights="NO_TRADING",
+                    access_rights=(
+                        "FULL_ACCESS"
+                        if self._settings.trading_enabled
+                        and info.trade_mode == ACCOUNT_TRADE_MODE_DEMO
+                        else "NO_TRADING"
+                    ),
                 )
             ]
 
         return await self._call(run)
 
+    def _alias_of(self, mt5_name: str) -> str:
+        return self._reverse_aliases.get(mt5_name.upper(), mt5_name)
+
+    def _trading(self) -> None:
+        mt5_trading.ensure_trading(self._mt5, self._settings.trading_enabled)
+
     async def get_open_orders(self, account_id: AccountId) -> list[Order]:
-        return []
+        if not self._settings.trading_enabled:
+            return []
+
+        def run() -> list[Order]:
+            orders = self._mt5.orders_get() or ()
+            return [mt5_trading.to_order(o, self._alias_of) for o in orders]
+
+        return await self._call(run)
 
     async def get_order_history(
         self, account_id: AccountId, from_ts: int | None = None, to_ts: int | None = None
@@ -643,13 +665,29 @@ class Mt5Client(BrokerPort, MarketDataPort):
         return []
 
     async def place_order(self, account_id: AccountId, order: Mapping[str, Any]) -> dict[str, Any]:
-        raise TradingDisabledError("Trading is disabled: the MT5 bridge is read-only")
+        def run() -> dict[str, Any]:
+            self._trading()
+            _, mt5_name = self._resolve(str(order["symbol"]))
+            return mt5_trading.place_order(self._mt5, mt5_name, order)
+
+        return await self._call(run)
 
     async def cancel_order(self, account_id: AccountId, order_id: OrderId) -> None:
-        raise TradingDisabledError("Trading is disabled: the MT5 bridge is read-only")
+        def run() -> None:
+            self._trading()
+            mt5_trading.cancel_order(self._mt5, int(order_id))
+
+        await self._call(run)
 
     async def get_open_positions(self, account_id: AccountId) -> list[Position]:
-        return []
+        if not self._settings.trading_enabled:
+            return []
+
+        def run() -> list[Position]:
+            positions = self._mt5.positions_get() or ()
+            return [mt5_trading.to_position(p, self._alias_of) for p in positions]
+
+        return await self._call(run)
 
     async def get_deal_history(
         self, account_id: AccountId, from_ts: int | None = None, to_ts: int | None = None
@@ -659,4 +697,10 @@ class Mt5Client(BrokerPort, MarketDataPort):
     async def close_position(
         self, account_id: AccountId, position_id: PositionId, close_volume: int | None = None
     ) -> Position:
-        raise TradingDisabledError("Trading is disabled: the MT5 bridge is read-only")
+        def run() -> Position:
+            self._trading()
+            return mt5_trading.close_position(
+                self._mt5, int(position_id), close_volume, self._alias_of
+            )
+
+        return await self._call(run)

@@ -76,6 +76,8 @@ class Mt5Settings:
     volume_source: Literal["real", "tick"]
     symbol_aliases: dict[str, str]
     history_settle_attempts: int
+    # Off by default: the bridge only reads prices. When on, orders go to demo accounts only.
+    trading_enabled: bool = False
 
     @classmethod
     def from_env(cls) -> "Mt5Settings":
@@ -93,6 +95,7 @@ class Mt5Settings:
             volume_source=volume,  # type: ignore[arg-type]
             symbol_aliases=parse_symbol_aliases(_read_str("MT5_SYMBOLS", "ES=@EP")),
             history_settle_attempts=max(1, _read_int("MT5_HISTORY_SETTLE_ATTEMPTS", 6)),
+            trading_enabled=_read_bool("MT5_TRADING_ENABLED", False),
         )
 
 

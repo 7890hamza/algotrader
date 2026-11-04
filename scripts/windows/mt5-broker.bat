@@ -19,5 +19,5 @@ if "%MT5_SERVER_UTC_OFFSET_MINUTES%"=="" set MT5_SERVER_UTC_OFFSET_MINUTES=0
 rem Refuses to start on a real-money account unless you set this to false.
 if "%MT5_REQUIRE_DEMO%"=="" set MT5_REQUIRE_DEMO=true
 
-echo Starting the MT5 price bridge (read-only) on http://localhost:8050 ...
+if /i "%MT5_TRADING_ENABLED%"=="true" (echo Starting the MT5 price bridge WITH ORDER SENDING ^(demo only^) on http://localhost:8050 ...) else (echo Starting the MT5 price bridge ^(read-only^) on http://localhost:8050 ...)
 ".venv-mt5\Scripts\python.exe" -m uvicorn app.main:app --host 0.0.0.0 --port 8050

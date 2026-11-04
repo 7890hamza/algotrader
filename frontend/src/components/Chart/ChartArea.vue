@@ -53,11 +53,15 @@
       :state="ptState"
       :model="ptModel"
       :spec="ptSpec"
+      :symbol="currentMarketStore.symbol"
+      :last-price="lastClose"
       @flip="positionTool?.flip()"
       @remove="positionTool?.remove()"
       @qty="(qty: number) => positionTool?.update({ qty })"
       @point-value="(value: number | null) => positionTool?.setCustomPointValue(value)"
     />
+
+    <mt5-panel v-if="!isSecondPane" />
 
     <aln-guide-overlay :time-zone="chartTimeZone" />
     <tbr-stats-overlay />
@@ -131,6 +135,8 @@ import TbrStatsOverlay from "@/components/Chart/TbrStatsOverlay.vue";
 import AmTbrGuideOverlay from "@/components/Chart/AmTbrGuideOverlay.vue";
 import { CloseCircleOutline } from "@/icons";
 import PositionToolCard from "@/components/Chart/PositionToolCard.vue";
+import Mt5Panel from "@/components/Chart/Mt5Panel.vue";
+import { IS_SECOND_PANE } from "@/utils/chartPane";
 import { PositionToolController } from "@/utils/chart/positionToolController";
 import type { PositionModel, PositionToolState } from "@/utils/chart/positionTool";
 import type { ContractSpec } from "@/utils/chart/contractSpecs";
@@ -216,6 +222,7 @@ export default defineComponent({
     AmTbrGuideOverlay,
     CloseCircleOutline,
     PositionToolCard,
+    Mt5Panel,
     Indicator,
     NButton,
     NIcon,
@@ -270,6 +277,15 @@ export default defineComponent({
   },
 
   computed: {
+    isSecondPane(): boolean {
+      return IS_SECOND_PANE;
+    },
+
+    lastClose(): number | null {
+      const bars = this.candlesticksStore.data;
+      return bars.length ? bars[bars.length - 1].close : null;
+    },
+
     chartTimeZone(): string {
       return displayTimeZoneForTimeframe(this.currentTimeframeStore.value);
     },

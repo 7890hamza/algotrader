@@ -36,3 +36,6 @@ class Position:
     money_digits: int | None = None
     trailing_stop_loss: bool | None = None
     symbol: str | None = None
+    # MT5: live price and open profit in account currency.
+    current_price: Decimal | None = None
+    profit: Decimal | None = None

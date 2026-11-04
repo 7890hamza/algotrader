@@ -16,7 +16,7 @@ from app.api.routers import (
 )
 from app.infrastructure.config import ServiceContainer
 from app.infrastructure.logging import configure_logging
-from app.infrastructure.mt5_client import TradingDisabledError
+from app.infrastructure.mt5_client import OrderRejectedError, TradingDisabledError
 from app.settings import Settings
 
 
@@ -46,6 +46,10 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     @app.exception_handler(TradingDisabledError)
     async def trading_disabled(_request: Request, exc: TradingDisabledError) -> JSONResponse:
         return JSONResponse(status_code=403, content={"detail": str(exc)})
+
+    @app.exception_handler(OrderRejectedError)
+    async def order_rejected(_request: Request, exc: OrderRejectedError) -> JSONResponse:
+        return JSONResponse(status_code=400, content={"detail": str(exc)})
 
     @app.get("/health")
     async def health():
