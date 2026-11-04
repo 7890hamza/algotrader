@@ -53,9 +53,26 @@ class AlnTbrTests(unittest.TestCase):
         self.assertGreater(follow, 7000)  # after a -0.25 touch the follow-through zone is above
         revert = FIELDS.index("revert_at")
         self.assertTrue(np.isfinite(last[-1, revert]))
+        # live fields: touch time, furthest stretch below the line, follow-through after return
+        self.assertEqual(last[hit, FIELDS.index("touch_at")], t[20 * 360 + hit])
+        self.assertLessEqual(np.nanmin(last[:, FIELDS.index("stretch_now")]), 6986)
+        back = int(np.argmax(np.isfinite(last[:, revert])))
+        self.assertTrue(np.isnan(last[back - 1, FIELDS.index("follow_now")]))
+        self.assertTrue(np.isfinite(last[back, FIELDS.index("follow_now")]))
+
+    def test_cme_open_session(self) -> None:
+        """18:00-20:00 New York: the CME reopen has its own open and lines."""
+        t, o, h, low, c = asia_nights(21, lambda i: 7000.0 + i * 0.05)
+        shift = -2 * 3600 * 1000  # move the 20:00 bars to 18:00
+        tt = t + shift
+        out = session_fade(tt, o, h, low, c, "cme")
+        last = out[20 * 360 : 21 * 360]
+        self.assertTrue(np.isfinite(last[:120, 0]).all())  # 2-hour session
+        self.assertTrue(np.isnan(last[120:, 0]).all())  # Asia's hours are not part of it
 
     def test_parse_and_registry(self) -> None:
         self.assertEqual(parse_sessions("Asia, LDN,am"), ["asia", "ldn", "am"])
+        self.assertEqual(parse_sessions("cme"), ["cme"])
         with self.assertRaises(ValueError):
             parse_sessions("tokyo")
         self.assertIn("aln_tbr", get_registry().list_specs())

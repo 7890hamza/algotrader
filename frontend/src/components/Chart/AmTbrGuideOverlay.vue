@@ -15,7 +15,7 @@ import { computed } from "vue";
 
 import { useIndicatorsStore } from "@/stores/indicatorsStore";
 import type { JsonObject } from "@/types/contracts";
-import { buildTbrGuideView } from "@/utils/chart/tbrGuide";
+import { activeTbrSession, buildTbrGuideView, TBR_SESSION_START_HOUR } from "@/utils/chart/tbrGuide";
 
 defineOptions({ name: "AmTbrGuideOverlay" });
 
@@ -23,16 +23,35 @@ const props = defineProps<{ timeZone: string }>();
 const indicatorsStore = useIndicatorsStore();
 
 const indicator = computed(() =>
-  indicatorsStore.all.find((item) => (item.info.guide as JsonObject | undefined)?.kind === "tbr_am") ?? null,
+  indicatorsStore.all.find((item) => {
+    const kind = (item.info.guide as JsonObject | undefined)?.kind;
+    return kind === "tbr_am" || kind === "tbr";
+  }) ?? null,
 );
 
 const view = computed(() => {
   const item = indicator.value;
   if (!item) return null;
   void item.dataVersion;
-  const point = item.lastLivePoint ?? item.data[item.data.length - 1] ?? null;
-  const rates = (item.info.guide?.rates ?? {}) as unknown as Record<string, [number, number]>;
-  return buildTbrGuideView(point, rates, props.timeZone);
+  const guide = (item.info.guide ?? {}) as JsonObject;
+  if (guide.kind === "tbr_am") {
+    const point = item.lastLivePoint ?? item.data[item.data.length - 1] ?? null;
+    const rates = (guide.rates ?? {}) as unknown as Record<string, [number, number]>;
+    return buildTbrGuideView(point, rates, props.timeZone);
+  }
+  // ALN TBR: walk through whichever chosen session is running (or ran last).
+  const all = (guide.sessions ?? []) as unknown as { key: string; label: string; rates?: Record<string, [number, number]> }[];
+  const param = item.parameters?.sessions as { value?: unknown; default?: unknown } | undefined;
+  const chosen = String(param?.value ?? param?.default ?? "").toLowerCase().split(/[,;]/).map((s) => s.trim()).filter(Boolean);
+  const sessions = all.filter((s) => chosen.length === 0 || chosen.includes(s.key));
+  const points = item.lastLivePoint ? [...item.data, item.lastLivePoint] : item.data;
+  const active = activeTbrSession(points, sessions);
+  if (!active) return null;
+  const rates = sessions.find((s) => s.key === active.key)?.rates ?? {};
+  return buildTbrGuideView(active.point, rates, props.timeZone, {
+    label: `${active.label} TBR`,
+    startHour: TBR_SESSION_START_HOUR[active.key],
+  });
 });
 </script>
 

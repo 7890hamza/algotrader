@@ -47,7 +47,10 @@ export function buildTbrGuideView(
   point: IndicatorDataPoint | null,
   rates: Rates,
   timeZone: string,
+  options: { label?: string; startHour?: number } = {},
 ): TbrGuideView | null {
+  const name = options.label ?? 'AM TBR';
+  const startHour = options.startHour ?? 8;
   const open = num(point, 'open');
   if (point === null || open === null) return null;
   const up = num(point, '+0.25');
@@ -58,19 +61,19 @@ export function buildTbrGuideView(
 
   if (side === null || touchAt === null) {
     return {
-      sentence: `AM TBR Open ${formatPrice(open)}. Waiting for price to touch +0.25${up !== null ? ` (${formatPrice(up)})` : ''} or −0.25${dn !== null ? ` (${formatPrice(dn)})` : ''}.`,
-      detail: 'Almost every morning touches one of them, most often in the first hour.',
+      sentence: `${name} Open ${formatPrice(open)}. Waiting for price to touch +0.25${up !== null ? ` (${formatPrice(up)})` : ''} or −0.25${dn !== null ? ` (${formatPrice(dn)})` : ''}.`,
+      detail: 'Almost every session touches one of them, most often in the first hour.',
       tone: 'waiting',
       steps: steps(1),
     };
   }
 
   const sign = side > 0 ? '+' : '−';
-  const hour = Number(NEW_YORK_HOUR.format(new Date(touchAt))) - 8;
+  const hour = (Number(NEW_YORK_HOUR.format(new Date(touchAt))) - startHour + 24) % 24;
   const rate = rates[`${side},${hour}`];
   const odds = rate
-    ? `Mornings like this came back to the AM TBR Open ${Math.round(rate[0])}% of the time${rate[1] < 30 ? ' (few past days)' : ''}.`
-    : 'Few past mornings touched this late.';
+    ? `Sessions like this came back to the ${name} Open ${Math.round(rate[0])}% of the time${rate[1] < 30 ? ' (few past days)' : ''}.`
+    : 'Few past sessions touched this late.';
   const hit = `${sign}0.25 hit at ${clock(touchAt)}.`;
   const revertAt = num(point, 'revert_at');
 
@@ -113,9 +116,59 @@ export function buildTbrGuideView(
     ][place(d(now), d(near), d(mid), d(far))];
   }
   return {
-    sentence: `${hit} Back at the AM TBR Open at ${clock(revertAt)} ✓`,
+    sentence: `${hit} Back at the ${name} Open at ${clock(revertAt)} ✓`,
     detail,
     tone: 'done',
     steps: steps(4),
   };
+}
+
+/** New York hour each ALN TBR session opens. */
+export const TBR_SESSION_START_HOUR: Record<string, number> = { cme: 18, asia: 20, ldn: 2, am: 8, pm: 12, ny: 8 };
+
+const SESSION_FIELDS: [string, string][] = [
+  ['open', 'open'], ['+0.25', 'up'], ['-0.25', 'dn'], ['touch_side', 'side'], ['touch_at', 'touch_at'],
+  ['revert_at', 'revert_at'], ['stretch_near', 'stretch_near'], ['stretch_mid', 'stretch_mid'],
+  ['stretch_far', 'stretch_far'], ['follow_near', 'follow_near'], ['follow_mid', 'follow_mid'],
+  ['follow_far', 'follow_far'], ['stretch_now', 'stretch_now'], ['follow_now', 'follow_now'],
+];
+
+export interface ActiveTbrSession {
+  key: string;
+  label: string;
+  /** The session's fields under the AM TBR names buildTbrGuideView reads. */
+  point: IndicatorDataPoint;
+}
+
+/** The ALN TBR session drawn at the most recent point (the live one, or the last one that ran). */
+export function activeTbrSession(
+  points: readonly IndicatorDataPoint[],
+  sessions: readonly { key: string; label: string }[],
+  lookback = 3000,
+): ActiveTbrSession | null {
+  for (let i = points.length - 1; i >= Math.max(0, points.length - lookback); i -= 1) {
+    const p = points[i];
+    // Several sessions can overlap (NY with AM / PM): the one that opened last wins.
+    let best: { key: string; label: string } | null = null;
+    let bestStart = -Infinity;
+    for (const s of sessions) {
+      if (num(p, `${s.key}_open`) === null) continue;
+      const start = TBR_SESSION_START_HOUR[s.key] ?? 0;
+      const nyHour = Number(NEW_YORK_HOUR.format(new Date(Number(p.timestamp_ms))));
+      const since = (nyHour - start + 24) % 24;
+      if (-since > bestStart) {
+        best = s;
+        bestStart = -since;
+      }
+    }
+    if (best) {
+      const point: IndicatorDataPoint = { timestamp_ms: p.timestamp_ms };
+      for (const [to, from] of SESSION_FIELDS) {
+        const v = num(p, `${best.key}_${from}`);
+        if (v !== null) point[to] = v;
+      }
+      return { key: best.key, label: best.label, point };
+    }
+  }
+  return null;
 }

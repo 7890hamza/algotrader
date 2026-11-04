@@ -22,6 +22,11 @@ INDICATOR_MAP: dict[int, str] = {
 }
 
 
+# Kept so charts that already have them still load, but not offered for new charts:
+# AM TBR is now the "am" session of ALN TBR.
+HIDDEN_INDICATORS = {"am_tbr"}
+
+
 def get_available_indicators() -> list[dict]:
     # Skip ids the installed indicator_engine doesn't provide (for example when the
     # API code was updated but the image with the shared library was not rebuilt),
@@ -30,7 +35,7 @@ def get_available_indicators() -> list[dict]:
     return [
         {"id": indicator_id, "name": specs[engine_id].name}
         for indicator_id, engine_id in INDICATOR_MAP.items()
-        if engine_id in specs
+        if engine_id in specs and engine_id not in HIDDEN_INDICATORS
     ]
 
 

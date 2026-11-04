@@ -156,11 +156,12 @@ const SHORT_LABELS: Record<string, string> = { 'Hour Open': 'Open', 'Prior H': '
  * Quiet lines: past hours keep their lines and markers but no text (the hour chip
  * shows the story on hover); the running hour gets small labels with prices.
  */
-export function tidyHourSegments<T extends { endTime: number; label: string; showPrice: boolean; labelColor: string; compact?: boolean; touchText?: string; markerText?: string }>(
+export function tidyHourSegments<T extends { id: string; endTime: number; label: string; showPrice: boolean; labelColor: string; compact?: boolean; touchText?: string; markerText?: string }>(
   segments: readonly T[],
   lastTime: number,
 ): T[] {
-  return segments.map((s) => {
+  // Past sessions also drop their zone mid-lines (P75): the zones are only drawn for the live one.
+  return segments.filter((s) => s.endTime === lastTime || !/_mid@/.test(s.id)).map((s) => {
     if (s.endTime !== lastTime) return { ...s, label: '', showPrice: false, touchText: undefined, markerText: undefined };
     return { ...s, label: SHORT_LABELS[s.label] ?? s.label, labelColor: '#9aa4b2', compact: true };
   });

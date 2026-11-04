@@ -29,6 +29,7 @@ from .session_sdev import MINUTES_PER_DAY, MS_PER_DAY, MS_PER_MINUTE, _local_ms,
 
 # name: (start minute New York, length in minutes)
 SESSIONS: dict[str, tuple[int, int]] = {
+    "cme": (18 * 60, 120),  # CME / Globex reopen, 18:00-20:00 New York (3-5 PM Pacific)
     "asia": (20 * 60, 360),
     "ldn": (2 * 60, 360),
     "am": (8 * 60, 240),
@@ -38,6 +39,11 @@ SESSIONS: dict[str, tuple[int, int]] = {
 ZONES = ("stretch", "runaway", "follow")
 # (median, p75, p90) in SDEV, ES 2016-2025, 1-minute AMP data.
 ZONE_STATS: dict[str, dict[str, tuple[float, float, float]]] = {
+    "cme": {
+        "stretch": (0.432, 0.645, 0.951),
+        "runaway": (1.123, 1.706, 2.697),
+        "follow": (0.500, 0.976, 1.779),
+    },
     "asia": {
         "stretch": (0.409, 0.598, 0.907),
         "runaway": (1.256, 1.785, 2.457),
@@ -64,14 +70,34 @@ ZONE_STATS: dict[str, dict[str, tuple[float, float, float]]] = {
         "follow": (0.511, 0.995, 1.648),
     },
 }
-FIELDS = ["open", "up", "dn", "revert_at", "side"] + [
-    f"{z}_{e}" for z in ZONES for e in ("near", "far", "mid")
-]
+FIELDS = (
+    ["open", "up", "dn", "revert_at", "side"]
+    + [f"{z}_{e}" for z in ZONES for e in ("near", "far", "mid")]
+    + ["touch_at", "stretch_now", "follow_now"]
+)
+F = {name: i for i, name in enumerate(FIELDS)}
 OUTPUTS = [f"{s}_{f}" for s in SESSIONS for f in FIELDS]
 COL = {name: i for i, name in enumerate(OUTPUTS)}
 NEW_YORK = ZoneInfo("America/New_York")
 LEVEL = 0.25
 LOOKBACK = 20
+
+
+def _live_fields(out, rows, k, j, side, epoch_ms, high, low) -> None:
+    """touch_at; the furthest price past the touched line until the return (stretch_now);
+    the furthest price past the open after the return (follow_now)."""
+    out[rows[k:], F["touch_at"]] = epoch_ms[rows[k]]
+    seg = rows[k : len(rows) if j is None else j]
+    if side == 1:
+        out[seg, F["stretch_now"]] = np.maximum.accumulate(high[seg])
+    else:
+        out[seg, F["stretch_now"]] = np.minimum.accumulate(low[seg])
+    if j is not None:
+        tail = rows[j:]
+        if side == 1:
+            out[tail, F["follow_now"]] = np.minimum.accumulate(low[tail])
+        else:
+            out[tail, F["follow_now"]] = np.maximum.accumulate(high[tail])
 
 
 def session_fade(
@@ -137,11 +163,12 @@ def session_fade(
                     else -1
                 )
                 back = (ll[k + 1 :] <= o) if side == 1 else (hh[k + 1 :] >= o)
-                if back.any():
-                    j = k + 1 + int(np.argmax(back))
+                j = k + 1 + int(np.argmax(back)) if back.any() else None
+                if j is not None:
                     out[rows[j:], 3] = epoch_ms[rows[j]]
                 after = rows[k:]
                 out[after, 4] = side
+                _live_fields(out, rows, k, j, side, epoch_ms, high, low)
                 for z_i, zone in enumerate(ZONES):
                     med, p75, p90 = stats[zone]
                     direction = -side if zone == "follow" else side
@@ -163,7 +190,7 @@ def parse_sessions(raw: str) -> list[str]:
 
 
 class AlnTBR(IndicatorBase):
-    """Open fade (+/- 0.25 SDEV back to the open) for the Asia, London and AM sessions."""
+    """Open fade (+/- 0.25 SDEV back to the open) per session: CME, Asia, London, AM, PM."""
 
     spec = IndicatorSpec(
         id="aln_tbr",
@@ -173,7 +200,7 @@ class AlnTBR(IndicatorBase):
             "where price came back to the open, and stretch / no-return / follow-through zones."
         ),
         parameters={
-            "sessions": {"type": "string", "default": "asia, ldn, am"},
+            "sessions": {"type": "string", "default": "cme, asia, ldn, am, pm"},
             "lookback": {"type": "int", "default": LOOKBACK, "min": 2},
         },
         outputs=OUTPUTS,

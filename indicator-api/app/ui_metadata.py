@@ -102,6 +102,12 @@ def _am_tbr_metadata() -> dict:
 
 # Came back % and touched sessions by "side,hour since the session open" (side 1 = +0.25).
 TBR_RATES: dict[str, dict[str, list[float]]] = {
+    "cme": {
+        "1,0": [74.7, 1269],
+        "1,1": [30.3, 33],
+        "-1,0": [74.6, 1029],
+        "-1,1": [30.0, 40],
+    },
     "asia": {
         "1,0": [75.8, 1019],
         "1,1": [68.2, 88],
@@ -175,6 +181,7 @@ TBR_RATES: dict[str, dict[str, list[float]]] = {
 # to the session open before the session ended, and how many sessions were touched.
 ALN_TBR_SESSIONS = [
     # key, label, color, window (Pacific), came back %, touched sessions
+    ("cme", "CME", "#A78BFA", "3-5 PM", 73.3, 2371),
     ("asia", "Asia", "#E0574A", "5-11 PM", 75.6, 2366),
     ("ldn", "London", "#5B7CFA", "11 PM-5 AM", 77.4, 2396),
     ("am", "AM", "#3FB950", "5-9 AM", 75.8, 2419),

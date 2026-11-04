@@ -215,14 +215,17 @@ export class IndicatorManager {
     const hours = readHourStatsGuide(indicator.info.guide);
     const allBoxes = buildSessionBoxes(points, indicator.info.outputs);
     const lastTime = Math.floor(Math.max(...points.map((p) => Number(p.timestamp_ms))) / 1000);
-    const boxes = hours ? currentHourBoxes(allBoxes, lastTime) : allBoxes;
+    // Hour Stats and the TBRs keep past sessions quiet: boxes only for the session running now.
+    const kind = (indicator.info.guide as JsonObject | undefined)?.kind;
+    const quiet = hours !== null || kind === 'tbr' || kind === 'tbr_am';
+    const boxes = quiet ? currentHourBoxes(allBoxes, lastTime) : allBoxes;
     const tbr = tbrTagSpecs(indicator.info.guide, indicator.parameters);
     const tags = guide
       ? buildSessionTags(points, boxes, DEFAULT_CHART_TIME_ZONE)
       : tbr.length
         ? buildTbrTags(points, tbr, DEFAULT_CHART_TIME_ZONE)
         : hours ? buildHourTags(points, hours, DEFAULT_CHART_TIME_ZONE) : [];
-    const drawn = hours ? tidyHourSegments(segments, lastTime) : segments;
+    const drawn = quiet ? tidyHourSegments(segments, lastTime) : segments;
     this.chartManager.setSessionLevels(id, PRICE_SERIES_KEY, drawn, undefined, boxes, tags);
     // Engulfing candles highlight the levels other indicators draw, so redraw them.
     for (const [otherId] of this.levelPoints) {
