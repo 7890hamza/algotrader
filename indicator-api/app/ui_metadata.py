@@ -422,69 +422,73 @@ def _breaks_metadata() -> dict:
 
 
 def _aln_sdev_metadata() -> dict:
-    """Each ALN session: its open in the session color and dotted +/- SDEV lines (the SDEV look)."""
+    """The original SDEV look for every session: gold dotted "<Session> Open", green dotted
+    ladder with short "+0.5" labels, each line drawn across its session's whole window."""
+    windows = {"cme": 240, "asia": 360, "ldn": 360, "am": 240, "pm": 240}
     outputs: dict[str, dict] = {}
-    for key, label, color, _, _, _ in ALN_TBR_SESSIONS:
-        if key == "ny":
+    for key, label, _color, _, _, _ in ALN_TBR_SESSIONS:
+        if key not in windows:
             continue
         outputs[f"{key}_open"] = {
             "type": "level",
             "label": f"{label} Open",
             "labelColor": SDEV_LABEL_COLOR,
-            "showPrice": True,
-            "plotOptions": {"lineWidth": 1, "lineStyle": 0, "color": color},
+            "sessionMinutes": windows[key],
+            "plotOptions": {"lineWidth": 1, "lineStyle": DOTTED, "color": SDEV_OPEN_COLOR},
         }
         for m in SDEV_MULTIPLIERS:
             for sign in ("+", "-"):
                 outputs[f"{key}_{sign}{m:g}"] = {
                     "type": "level",
-                    "label": f"{label} {sign}{m:g}",
+                    "label": f"{sign}{m:g}",
                     "labelColor": SDEV_LABEL_COLOR,
-                    "showPrice": True,
+                    "sessionMinutes": windows[key],
                     "plotOptions": {"lineWidth": 1, "lineStyle": DOTTED, "color": SDEV_LEVEL_COLOR},
                 }
-    return {"overlay": True, "outputs": outputs, "guide": {"kind": "aln_sdev"}}
+    return {"overlay": True, "outputs": outputs}
 
 
 MTF_TIMEFRAMES = (
-    # key, label, color, kept in the price scale's autoscale
-    ("d", "D", "#E9A23B", True),
-    ("w", "W", "#A78BFA", False),
-    ("m", "M", "#D4537E", False),
-    ("h4", "4H", "#26A69A", True),
-    ("h1", "1H", "#8A919C", True),
+    # key, label prefix, kept in the price scale's autoscale. Lines run to the latest bar so
+    # every label lines up just right of price.
+    ("d", "D", True),
+    ("w", "W", False),
+    ("m", "M", False),
+    ("h4", "4H", True),
+    ("h1", "1H", True),
 )
 
 
 def _mtf_sdev_metadata() -> dict:
-    """Open + dotted ladder per timeframe; PDH / PDL / PWH / PWL with Hit arrows; day-range bar."""
+    """The original SDEV look per timeframe ("D Open", "+0.5"; "W +0.5" for the others), the
+    prior day / week high and low with Hit arrows, and the day-range bar."""
     grey = "#8A919C"
     outputs: dict[str, dict] = {}
-    for key, label, color, scale in MTF_TIMEFRAMES:
-        extra = {} if scale else {"autoscale": False}
+    for key, label, scale in MTF_TIMEFRAMES:
+        extra: dict = {} if scale else {"autoscale": False}
+        prefix = "" if key == "d" else f"{label} "
         outputs[f"{key}_open"] = {
-            "type": "level", "label": f"{label} Open", "labelColor": SDEV_LABEL_COLOR, "showPrice": True,
-            "plotOptions": {"lineWidth": 1, "lineStyle": 0, "color": color}, **extra,
+            "type": "level", "label": f"{label} Open", "labelColor": SDEV_LABEL_COLOR,
+            "plotOptions": {"lineWidth": 1, "lineStyle": DOTTED, "color": SDEV_OPEN_COLOR}, **extra,
         }
         for m in (0.5, 1.0, 1.5, 2.0):
             for sign in ("+", "-"):
                 outputs[f"{key}_{sign}{m:g}"] = {
-                    "type": "level", "label": f"{label} {sign}{m:.1f}", "labelColor": SDEV_LABEL_COLOR,
-                    "showPrice": True, "plotOptions": {"lineWidth": 1, "lineStyle": DOTTED, "color": color}, **extra,
+                    "type": "level", "label": f"{prefix}{sign}{m:g}", "labelColor": SDEV_LABEL_COLOR,
+                    "plotOptions": {"lineWidth": 1, "lineStyle": DOTTED, "color": SDEV_LEVEL_COLOR}, **extra,
                 }
     for key, label, touch, when, scale in (
         ("pdh", "PDH", "high", "pd_touch_h", True), ("pdl", "PDL", "low", "pd_touch_l", True),
         ("pwh", "PWH", "high", "pw_touch_h", False), ("pwl", "PWL", "low", "pw_touch_l", False),
     ):
         outputs[key] = {
-            "type": "level", "label": label, "labelColor": SDEV_LABEL_COLOR, "showPrice": True,
+            "type": "level", "label": label, "labelColor": SDEV_LABEL_COLOR,
             "touch": touch, "touchWhen": {"key": when, "equals": 1}, "touchShape": "arrow",
             "touchText": "Hit", "touchColor": grey,
             "plotOptions": {"lineWidth": 1, "lineStyle": 0, "color": grey},
             **({} if scale else {"autoscale": False}),
         }
     return {"overlay": True, "outputs": outputs, "guide": {"kind": "mtf_sdev", "rangeColor": "#378ADD"}}
-
 
 def _engulfing_metadata() -> dict:
     """Engulfing candles are drawn by the chart's price primitive from the raw outputs."""

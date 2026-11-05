@@ -124,6 +124,8 @@ export function buildSessionLevelSegments(
     const touchText = typeof output.touchText === 'string' ? output.touchText : undefined;
     const markerText = typeof output.markerText === 'string' ? output.markerText : undefined;
     const noAutoscale = output.autoscale === false ? true : undefined;
+    // sessionMinutes on an output: its own window length (multi-session indicators).
+    const ownSeconds = typeof output.sessionMinutes === 'number' ? output.sessionMinutes * 60 : sessionSeconds;
     let current: SessionLevelSegment | null = null;
 
     const close = (): void => {
@@ -170,7 +172,7 @@ export function buildSessionLevelSegments(
         showPrice,
         markerTime,
         markerColor,
-        sessionEndTime: toSessionEnd && sessionSeconds && sessionSeconds > bar ? time + sessionSeconds - bar : null,
+        sessionEndTime: toSessionEnd && ownSeconds && ownSeconds > bar ? time + ownSeconds - bar : null,
       };
     }
     close();

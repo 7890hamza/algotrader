@@ -25,6 +25,7 @@ import {
 } from './sessionLevels';
 
 const LABEL_GAP_PX = 8;
+const LABEL_MIN_GAP_PX = 13;
 const LABEL_FONT = '600 12px -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif';
 const TOUCH_RADIUS_PX = 4;
 const TOUCH_FILL = '#131722';
@@ -285,8 +286,18 @@ class SessionLevelsRenderer implements IPrimitivePaneRenderer {
         context.font = segment.compact ? COMPACT_FONT : LABEL_FONT;
         const maxLabelX = mediaSize.width - context.measureText(text).width - LABEL_GAP_PX;
         const labelX = Math.min(endX + LABEL_GAP_PX, maxLabelX);
-        return { ...drawable, text, labelX, lineEndX: Math.min(endX, labelX - LABEL_GAP_PX / 2) };
+        return { ...drawable, text, labelX, labelY: drawable.y, lineEndX: Math.min(endX, labelX - LABEL_GAP_PX / 2) };
       });
+      // Labels that end at the same place and would overlap are spread apart (lines stay put).
+      const stacked = placed.filter((p) => p.text).sort((a, b) => a.labelX - b.labelX || a.y - b.y);
+      for (let i = 0; i < stacked.length; i += 1) {
+        const column = stacked.filter((p) => Math.abs(p.labelX - stacked[i].labelX) < 30);
+        if (column[0] !== stacked[i]) continue;
+        column.sort((a, b) => a.y - b.y);
+        for (let k = 1; k < column.length; k += 1) {
+          if (column[k].labelY - column[k - 1].labelY < LABEL_MIN_GAP_PX) column[k].labelY = column[k - 1].labelY + LABEL_MIN_GAP_PX;
+        }
+      }
 
       for (const { segment, startX, lineEndX, y } of placed) {
         if (lineEndX <= startX) continue;
@@ -322,7 +333,7 @@ class SessionLevelsRenderer implements IPrimitivePaneRenderer {
           context.textBaseline = 'middle';
         }
       }
-      for (const { segment, y, touchX, touchTime, text, labelX } of placed) {
+      for (const { segment, y, touchX, touchTime, text, labelX, labelY } of placed) {
         if (touchX !== null && segment.touchShape === 'arrow') {
           // Up-touch: arrow above the line pointing down at it; down-touch: below, pointing up.
           const dir = segment.touch === 'high' ? -1 : 1;
@@ -353,7 +364,7 @@ class SessionLevelsRenderer implements IPrimitivePaneRenderer {
         }
         context.fillStyle = segment.labelColor;
         context.font = segment.compact ? COMPACT_FONT : LABEL_FONT;
-        if (text) context.fillText(text, labelX, y);
+        if (text) context.fillText(text, labelX, labelY);
       }
 
       context.restore();
