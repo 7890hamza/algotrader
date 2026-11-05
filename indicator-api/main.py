@@ -3,7 +3,7 @@ from contextlib import asynccontextmanager
 
 import uvicorn
 from algotrader_logger import RequestLoggingMiddleware, configure_logging
-from app.routes import indicators_router, live_indicator_streams_router, system_router
+from app.routes import game_plan_router, indicators_router, live_indicator_streams_router, system_router
 from app.services.candle_cache import CandleCache
 from app.services.live_indicator_manager import LiveIndicatorManager
 from fastapi import FastAPI
@@ -56,6 +56,7 @@ app.add_middleware(RequestLoggingMiddleware)
 app.include_router(system_router)
 app.include_router(indicators_router)
 app.include_router(live_indicator_streams_router)
+app.include_router(game_plan_router)
 
 
 if __name__ == "__main__":

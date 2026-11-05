@@ -148,6 +148,7 @@ import { IS_SECOND_PANE } from "@/utils/chartPane";
 import { PositionToolController } from "@/utils/chart/positionToolController";
 import type { RetraceDrawing } from "@/utils/chart/retraceTool";
 import { RetraceToolController } from "@/utils/chart/retraceToolController";
+import { GamePlanChartLink } from "@/utils/chart/gamePlanChartLink";
 import type { PositionModel, PositionToolState } from "@/utils/chart/positionTool";
 import type { ContractSpec } from "@/utils/chart/contractSpecs";
 import { fetchBrokerSymbolSpec } from "@/api/brokerClient";
@@ -214,6 +215,7 @@ interface ChartAreaData {
   ptModel: PositionModel | null;
   ptSpec: ContractSpec | null;
   retraceTool: RetraceToolController | null;
+  gamePlanLink: GamePlanChartLink | null;
   rtSelected: RetraceDrawing | null;
 }
 
@@ -287,6 +289,7 @@ export default defineComponent({
       ptModel: null,
       ptSpec: null,
       retraceTool: null,
+      gamePlanLink: null,
       rtSelected: null,
     };
   },
@@ -432,6 +435,17 @@ export default defineComponent({
       onPlaced: () => this.$emit("placed"),
     }));
     this.retraceTool.setSymbol(this.currentMarketStore.symbol);
+    if (!IS_SECOND_PANE) {
+      this.gamePlanLink = markRaw(new GamePlanChartLink({
+        getSeries: () => this.ohlcSeriesRef,
+        getSymbol: () => this.currentMarketStore.symbol,
+        lastBar: () => {
+          const bars = this.candlesticksStore.data;
+          const bar = bars.length ? bars[bars.length - 1] : null;
+          return bar ? { t: bar.timestamp_ms, close: Number(bar.close) } : null;
+        },
+      }));
+    }
     this.chartSession = markRaw(createChartSession(this.createChartSessionAdapter()));
     this.syncChartSession();
   },
@@ -467,6 +481,7 @@ export default defineComponent({
     this.setMeasurementPaneElement(null);
     this.positionTool?.destroy();
     this.retraceTool?.destroy();
+    this.gamePlanLink?.destroy();
     const chartContainer = this.getChartContainer();
     if (chartContainer) {
       chartContainer.removeEventListener("wheel", this.onWheelPassive);
@@ -791,6 +806,7 @@ export default defineComponent({
       this.positionTool?.syncSeries();
       this.retraceTool?.setPane(paneHtmlElement);
       this.retraceTool?.syncSeries();
+      this.gamePlanLink?.syncSeries();
       this.backtestOverlayTarget = paneHtmlElement
         ? getOrCreatePaneOverlayWrapper(paneHtmlElement)
         : null;

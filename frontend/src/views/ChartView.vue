@@ -38,6 +38,7 @@
         title="Second chart"
         data-testid="second-chart"
       />
+      <GamePlanPanel v-if="!isSecondPane && gamePlanStore.visible" />
     </div>
   </main>
 </template>
@@ -45,6 +46,7 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import ChartArea from '@/components/Chart/ChartArea.vue';
+import GamePlanPanel from '@/components/Chart/GamePlanPanel.vue';
 import {
   CHART_INTERACTION_MODES,
   DEFAULT_CHART_INTERACTION_MODE,
@@ -54,6 +56,7 @@ import TheTopBar from '@/components/TopBar/TheTopBar.vue';
 import TopBarModals from '@/components/TopBar/Modals/TopBarModals.vue';
 import { useCurrentMarketStore } from '@/stores/currentMarketStore';
 import { useCurrentTimeframeStore } from '@/stores/currentTimeframeStore';
+import { useGamePlanStore } from '@/stores/gamePlanStore';
 import { useMarketsStore } from '@/stores/marketsStore';
 import { useModalStore } from '@/stores/modalStore';
 import { isTimeframeCode } from '@/types/contracts';
@@ -73,6 +76,8 @@ const marketsStore = useMarketsStore();
 const currentMarketStore = useCurrentMarketStore();
 const currentTimeframeStore = useCurrentTimeframeStore();
 const modalStore = useModalStore();
+const gamePlanStore = useGamePlanStore();
+if (!IS_SECOND_PANE) watch(() => currentMarketStore.symbol, (s) => gamePlanStore.setSymbol(s ?? null), { immediate: true });
 const chartInteractionMode = ref<ChartInteractionMode>(DEFAULT_CHART_INTERACTION_MODE);
 const isSecondPane = IS_SECOND_PANE;
 const secondSrc = secondPaneUrl();

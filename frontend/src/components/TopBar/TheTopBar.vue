@@ -11,6 +11,16 @@
 
     <n-button round data-testid="topbar-indicator" @click="openModal('indicatorSearch')">Indicator</n-button>
 
+    <n-button
+      round
+      class="game-plan-button"
+      :class="{ 'game-plan-button--active': gamePlanStore.visible }"
+      data-testid="topbar-game-plan"
+      title="Game plan: today's stat targets, what got hit, and what carried over"
+      :aria-pressed="gamePlanStore.visible"
+      @click="gamePlanStore.toggle()"
+    >Game plan</n-button>
+
     <span v-if="remote" class="active-chart-note" data-testid="active-chart-note">Right chart</span>
 
     <div class="chart-interaction-controls" role="group" aria-label="Chart interaction mode">
@@ -124,6 +134,7 @@ import TimeframeDropdown from '@/components/TopBar/TimeframeDropdown.vue';
 import TopBarModals from '@/components/TopBar/Modals/TopBarModals.vue';
 import { HandRightOutline, ResizeOutline } from '@/icons';
 import { useCurrentMarketStore } from '@/stores/currentMarketStore';
+import { useGamePlanStore } from '@/stores/gamePlanStore';
 import { useModalStore } from '@/stores/modalStore';
 import type { ChartLayout } from '@/utils/chartPane';
 
@@ -158,6 +169,7 @@ function openModal(name: string): void {
 
 const currentMarketStore = useCurrentMarketStore();
 const modalStore = useModalStore();
+const gamePlanStore = useGamePlanStore();
 const currentSymbol = computed(() => currentMarketStore.symbol);
 const selectedChartInteractionModeColor = '#7fe7c4';
 
@@ -199,6 +211,7 @@ function toggleMode(mode: ChartInteractionMode): void {
 .position-button--active.position-button--long { background: rgba(63, 185, 80, 0.2); }
 .position-button--active.position-button--short { background: rgba(224, 87, 74, 0.2); }
 .position-button--retrace { color: #e9c46a; }
+.game-plan-button--active { color: #e9c46a; background: rgba(233, 196, 106, 0.15); }
 .position-button--active.position-button--retrace { background: rgba(233, 196, 106, 0.2); }
 
 .active-chart-note {
