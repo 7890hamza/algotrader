@@ -57,7 +57,7 @@ function readColors(guide: JsonObject | undefined): RetraceColors | null {
 function level(id: string, start: number, end: number, price: number, label: string, color: string, style: number): SessionLevelSegment {
   return {
     id, startTime: start, endTime: end, price, label, color, lineWidth: 1, lineStyle: style, touch: null,
-    labelColor: '#9aa4b2', showPrice: false, sessionEndTime: null, compact: true, noAutoscale: true,
+    labelColor: '#9aa4b2', showPrice: label !== '', sessionEndTime: null, compact: true, noAutoscale: true,
   };
 }
 
@@ -88,6 +88,12 @@ export function buildRetrace(points: readonly IndicatorDataPoint[], guide: JsonO
   }
   groups.splice(0, first);
   const lastPoint = sorted[sorted.length - 1];
+  let barSec = Number.POSITIVE_INFINITY;
+  for (let i = 1; i < sorted.length; i += 1) {
+    const d = (Number(sorted[i].timestamp_ms) - Number(sorted[i - 1].timestamp_ms)) / 1000;
+    if (d > 0 && d < barSec) barSec = d;
+  }
+  if (!Number.isFinite(barSec)) barSec = 60;
   const lastTime = Math.floor(Number(lastPoint.timestamp_ms) / 1000);
   const clock = (ms: number): string => formatClock(ms, timeZone);
   const out: RetraceBuild = { layer: { legs: [], marks: [], color: colors.leg }, boxes: [], segments: [] };
@@ -105,13 +111,15 @@ export function buildRetrace(points: readonly IndicatorDataPoint[], guide: JsonO
     const p60 = end - z60 * (end - start);
     const live = last === lastPoint;
     const color = dir > 0 ? colors.up : colors.down;
-    const t1 = Math.floor(Number(last.timestamp_ms) / 1000);
+    const zoneEnd = Math.floor(Number(last.timestamp_ms) / 1000);
     const outAt = num(last, 'rt_out_at');
     const outPx = num(last, 'rt_out_px');
     const res = num(last, 'rt_res');
     const word = dir > 0 ? 'high' : 'low';
     const hover = [
-      `40–60% retracement zone (${dir > 0 ? 'uptrend' : 'downtrend'})`,
+      k === 0
+        ? `IB leg: the IB ${dir > 0 ? 'low came first, then the high (an up leg)' : 'high came first, then the low (a down leg)'}`
+        : `40–60% retracement zone (${dir > 0 ? 'uptrend' : 'downtrend'})`,
       `Leg ${formatPrice(start)} → ${formatPrice(end)} (${formatPrice(Math.abs(end - start))} pts): price usually rests ${formatPrice(Math.min(p40, p60))}–${formatPrice(Math.max(p40, p60))} before the next step.`,
       outAt !== null && outPx !== null
         ? `Came back out at ${clock(outAt)} (${formatPrice(outPx)})${res === 1 ? ` and made a new ${word} ✓` : res === -1 ? ` but broke ${formatPrice(start)} first ✗` : ''}.`
@@ -119,18 +127,26 @@ export function buildRetrace(points: readonly IndicatorDataPoint[], guide: JsonO
       `Past ${formatPrice(start)} (100%) the trend changes.`,
       'The zone shows where to look. The entry is when price turns back out of it.',
     ];
-    if (endAt <= t1) {
+    // The leg's grey box (its whole range) with the 40-60% band inside, as a column that starts
+    // where the leg topped out (never inside the IB window: from the zone's first bar at the earliest).
+    const x0 = Math.max(endAt, Math.floor(Number(first.timestamp_ms) / 1000));
+    // Like his chart, the column ends just after price comes back out of the zone.
+    const t1 = outAt !== null ? Math.min(zoneEnd, Math.floor(outAt / 1000) + 2 * barSec) : zoneEnd;
+    if (x0 <= t1) {
       out.boxes.push({
-        id: `rt_zone@${endAt}`, startTime: endAt, endTime: t1, high: Math.max(p40, p60), low: Math.min(p40, p60),
-        color, label: '', noLabels: true, fillOpacity: live ? 0.22 : 0.1, hoverLines: hover,
+        id: `rt_leg@${x0}`, startTime: x0, endTime: t1, high: Math.max(start, end), low: Math.min(start, end),
+        color: '#8a919c', label: '', noLabels: true, fillOpacity: live ? 0.15 : 0.07, hoverLines: hover,
       });
-      out.segments.push(level(`rt_mid@${endAt}`, endAt, t1, (p40 + p60) / 2, '', color, 1));
+      out.boxes.push({
+        id: `rt_zone@${x0}`, startTime: x0, endTime: t1, high: Math.max(p40, p60), low: Math.min(p40, p60),
+        color, label: '', noLabels: true, fillOpacity: live ? 0.42 : 0.2, hoverLines: hover,
+      });
+      out.segments.push(level(`rt_mid@${x0}`, x0, t1, (p40 + p60) / 2, '', color, 0));
     }
     if (live) {
       out.segments.push(
-        level(`rt_40@${endAt}`, endAt, lastTime, p40, '40%', color, 1),
-        level(`rt_60@${endAt}`, endAt, lastTime, p60, '60%', color, 1),
-        level(`rt_100@${endAt}`, endAt, lastTime, start, '100%', '#8a919c', 1),
+        level(`rt_40@${x0}`, x0, lastTime, p40, '40%', color, 1),
+        level(`rt_60@${x0}`, x0, lastTime, p60, '60%', color, 1),
       );
     }
     if (k === 0 || out.layer!.legs.length === 0) out.layer!.legs.push({ time: startAt, price: start });

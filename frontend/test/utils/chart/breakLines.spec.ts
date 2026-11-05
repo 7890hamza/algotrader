@@ -56,9 +56,11 @@ describe('Breaks retracement layer', () => {
       { timestamp_ms: OPEN + 30 * M, rt_zone: 1, rt_dir: 1, rt_start: 110, rt_end: 125, rt_start_at: OPEN + 15 * M, rt_end_at: OPEN + 30 * M },
     ];
     const r = buildRetrace(points, { kind: 'breaks', retrace: { zone: [0.4, 0.6], up: '#0f0', down: '#f00', leg: '#ff0' } }, 'America/Los_Angeles');
-    expect(r.boxes[0]).toMatchObject({ high: 112, low: 108, fillOpacity: 0.1 });
-    expect(r.boxes[0].hoverLines?.[2]).toContain('made a new high ✓');
-    expect(r.segments.filter((s) => /^rt_(40|60|100)@/.test(s.id)).map((s) => s.label)).toEqual(['40%', '60%', '100%']);
+    expect(r.boxes[0]).toMatchObject({ high: 120, low: 100, fillOpacity: 0.07 }); // the whole leg (grey)
+    expect(r.boxes[1]).toMatchObject({ high: 112, low: 108, fillOpacity: 0.2 }); // its 40-60% band
+    expect(r.boxes[0].hoverLines?.[0]).toContain('IB leg');
+    expect(r.boxes[1].hoverLines?.[2]).toContain('made a new high ✓');
+    expect(r.segments.filter((s) => /^rt_(40|60)@/.test(s.id)).map((s) => s.label)).toEqual(['40%', '60%']);
     expect(r.layer?.legs.map((p) => p.price)).toEqual([100, 120, 110, 125]);
     expect(r.layer?.marks[0]).toMatchObject({ text: 'Out ✓', price: 112.5 });
   });
