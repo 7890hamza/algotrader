@@ -1,6 +1,6 @@
-"""Hour Stats (nqstats.com/hour_stats) measured on ES, 08:00-16:00 New York.
+"""Hour Stats (nqstats.com/hour_stats) measured on ES, every hour of the CME day.
 
-For each hour from 08:00 to 15:00 New York: the hour open and the prior hour's high
+For each New York hour that has stats (all but 18:00, which has no prior hour): the hour open and the prior hour's high
 and low. A setup needs the hour open strictly inside the prior hour's range. A breach is
 a trade at least 1 tick beyond the prior high or low (first breach only); price is "back"
 when a later candle trades to the hour open before the hour ends.
@@ -33,15 +33,23 @@ from .session_sdev import MS_PER_MINUTE, _local_ms, to_epoch_ms
 MS_PER_HOUR = 60 * MS_PER_MINUTE
 NEW_YORK = ZoneInfo("America/New_York")
 TICK = 0.25
-FIRST_HOUR, LAST_HOUR = 8, 15
 ZONES = ("stretch", "follow")
 OUTPUTS = ["open", "ph", "pl", "setup", "side", "breach_at", "seg", "revert_at"] + [
     f"{z}_{e}" for z in ZONES for e in ("near", "far", "mid")
 ]
 COL = {name: i for i, name in enumerate(OUTPUTS)}
 
-# (median, p75, p90) in % of the hour open, by New York hour. ES 2016-2025, AMP 1-minute.
+# (median, p75, p90) in % of the hour open, by New York hour (every hour of the CME day that has
+# a prior hour). ES 2016-2025, AMP 1-minute.
 ZONE_STATS: dict[int, dict[str, tuple[float, float, float]]] = {
+    0: {"stretch": (0.0152, 0.0296, 0.0633), "follow": (0.0250, 0.0562, 0.1109)},
+    1: {"stretch": (0.0165, 0.0327, 0.0587), "follow": (0.0354, 0.0753, 0.1430)},
+    2: {"stretch": (0.0212, 0.0427, 0.0794), "follow": (0.0425, 0.0949, 0.1708)},
+    3: {"stretch": (0.0266, 0.0565, 0.1078), "follow": (0.0644, 0.1416, 0.2516)},
+    4: {"stretch": (0.0234, 0.0530, 0.0997), "follow": (0.0511, 0.1089, 0.1918)},
+    5: {"stretch": (0.0219, 0.0461, 0.0852), "follow": (0.0480, 0.0994, 0.1910)},
+    6: {"stretch": (0.0229, 0.0443, 0.0779), "follow": (0.0477, 0.0987, 0.1746)},
+    7: {"stretch": (0.0224, 0.0479, 0.0910), "follow": (0.0514, 0.1041, 0.1805)},
     8: {"stretch": (0.0250, 0.0560, 0.1063), "follow": (0.0798, 0.1622, 0.3343)},
     9: {"stretch": (0.0370, 0.0877, 0.1618), "follow": (0.1275, 0.2596, 0.4265)},
     10: {"stretch": (0.0464, 0.1005, 0.1886), "follow": (0.1199, 0.2517, 0.4477)},
@@ -50,6 +58,12 @@ ZONE_STATS: dict[int, dict[str, tuple[float, float, float]]] = {
     13: {"stretch": (0.0323, 0.0715, 0.1316), "follow": (0.0810, 0.1733, 0.3224)},
     14: {"stretch": (0.0381, 0.0802, 0.1671), "follow": (0.0913, 0.1922, 0.3635)},
     15: {"stretch": (0.0376, 0.0878, 0.1680), "follow": (0.1172, 0.2458, 0.4422)},
+    16: {"stretch": (0.0246, 0.0506, 0.1003), "follow": (0.0502, 0.1174, 0.2235)},
+    19: {"stretch": (0.0206, 0.0396, 0.0702), "follow": (0.0332, 0.0735, 0.1542)},
+    20: {"stretch": (0.0221, 0.0449, 0.0853), "follow": (0.0464, 0.1069, 0.2013)},
+    21: {"stretch": (0.0209, 0.0411, 0.0809), "follow": (0.0400, 0.0816, 0.1603)},
+    22: {"stretch": (0.0168, 0.0363, 0.0702), "follow": (0.0324, 0.0712, 0.1379)},
+    23: {"stretch": (0.0167, 0.0325, 0.0583), "follow": (0.0237, 0.0550, 0.1057)},
 }
 
 
@@ -76,7 +90,7 @@ def hour_stats(
     ends = np.r_[starts[1:], n]
     for g, (a, b) in enumerate(zip(starts, ends)):
         hod = int(hour_of_day[a])
-        if not (FIRST_HOUR <= hod <= LAST_HOUR) or g == 0:
+        if hod not in ZONE_STATS or g == 0:
             continue
         pa, pb = starts[g - 1], ends[g - 1]
         if hour_key[pa] != hour_key[a] - 1:

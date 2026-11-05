@@ -177,8 +177,6 @@ export function readHourSlices(guide: JsonObject | undefined): HourSlices {
 const MAE_COLOR = '#14b8a6';
 const MFE_COLOR = '#c026d3';
 const BOX_COLOR = '#2e7d4f';
-const FADED_GREY = 'rgba(138, 145, 156, 0.45)';
-const FADED_GOLD = 'rgba(200, 150, 46, 0.45)';
 const SLICE_WORDS = ['0–19', '20–39', '40–59'];
 /** Bands run from the median toward the 75th percentile, this share of the way (thin, like NQ Stats). */
 const BAND_SHARE = 0.45;
@@ -251,8 +249,8 @@ function barSecondsOf(points: readonly IndicatorDataPoint[]): number {
  * NQ Stats-style Hour Stats: for the running hour, a dotted prior-high / prior-low box split in
  * three 20-minute slices with the break odds above / below each, the open labeled "XX% @ Open"
  * once a level is swept, and the MAE (teal, past the swept level) and MFE (magenta, past the open)
- * bands across the hour. Earlier hours keep faded lines and bands. Hovering an hour's box or bands
- * opens a play-by-play card.
+ * bands across the hour. Every hour looks the same. Hovering an hour's box or bands opens its
+ * play-by-play card.
  */
 export function layoutHourStats<T extends SessionLevelSegmentLike>(
   points: readonly IndicatorDataPoint[],
@@ -303,18 +301,19 @@ export function layoutHourStats<T extends SessionLevelSegmentLike>(
       if (sN !== null && sM !== null) {
         lines.push(`3. MAE (teal): before turning back, half of hours stretched to ${formatPrice(sN)} past the ${word}, 3 in 4 to ${formatPrice(sM)}. Well beyond that, the idea is likely wrong.`);
         const sB = sN + (sM - sN) * BAND_SHARE; // a thin band from the typical stretch toward the 3-in-4 one
-        boxes.push({ id: `hs_mae@${run.start}`, startTime: run.start, endTime: endT, high: Math.max(sN, sB), low: Math.min(sN, sB), color: MAE_COLOR, label: '', noLabels: true, fillOpacity: live ? 0.3 : 0.08 });
+        boxes.push({ id: `hs_mae@${run.start}`, startTime: run.start, endTime: endT, high: Math.max(sN, sB), low: Math.min(sN, sB), color: MAE_COLOR, label: '', noLabels: true, fillOpacity: 0.3 });
       }
       if (fN !== null && fM !== null) {
         lines.push(`4. MFE (magenta): after getting back to the open, half of hours ran on to ${formatPrice(fN)}, 3 in 4 to ${formatPrice(fM)}. That's the next target.`);
         const fB = fN + (fM - fN) * BAND_SHARE;
-        boxes.push({ id: `hs_mfe@${run.start}`, startTime: run.start, endTime: endT, high: Math.max(fN, fB), low: Math.min(fN, fB), color: MFE_COLOR, label: '', noLabels: true, fillOpacity: live ? 0.28 : 0.08 });
+        boxes.push({ id: `hs_mfe@${run.start}`, startTime: run.start, endTime: endT, high: Math.max(fN, fB), low: Math.min(fN, fB), color: MFE_COLOR, label: '', noLabels: true, fillOpacity: 0.28 });
       }
       const back = num(run.last, 'revert_at');
       lines.push(back !== null ? `5. ${clock(back)}: back at the open ✓.` : live ? `5. Watching for the return to the open ${formatPrice(run.open)}.` : '5. It did not come back to the open.');
     }
     cards.set(run.start, lines);
-    if (live && run.ph !== null && run.pl !== null) {
+    // Every hour gets the same box, slices, labels and bands.
+    if (run.ph !== null && run.pl !== null) {
       boxes.push({
         id: `hs_box@${run.start}`, startTime: run.start, endTime: endT, high: run.ph, low: run.pl, color: BOX_COLOR, label: '',
         noLabels: true, fillOpacity: 0, dashed: true, hoverLines: lines,
@@ -327,9 +326,6 @@ export function layoutHourStats<T extends SessionLevelSegmentLike>(
     const run = runs.find((r) => s.startTime >= r.start && s.startTime < r.end);
     const key = s.id.split('@')[0];
     if (!run) return s;
-    if (run !== current) {
-      return { ...s, label: '', showPrice: false, touchText: undefined, markerText: undefined, color: key === 'open' ? FADED_GOLD : FADED_GREY };
-    }
     const side = run.breach ? num(run.breach, 'side') : null;
     const seg = run.breach ? Math.max(0, Math.min(2, num(run.breach, 'seg') ?? 0)) : null;
     const rates = hours[String(Number(NEW_YORK_HOUR.format(new Date(run.start * 1000))))];
