@@ -312,54 +312,48 @@ HOUR_RATES: dict[str, dict] = {
 }
 
 
+# Share of prior-hour-high / -low breaks in each 20-minute slice (minutes 0-19 / 20-39 / 40-59),
+# by New York hour, ES 2016-2025 (hours opening inside the prior hour's range).
+HOUR_SLICES: dict[str, dict] = {
+    "8": {"high": [55.8, 32.3, 11.9], "low": [57.0, 31.3, 11.7]},
+    "9": {"high": [39.7, 44.5, 15.8], "low": [42.3, 40.3, 17.4]},
+    "10": {"high": [72.4, 18.3, 9.3], "low": [71.9, 18.0, 10.1]},
+    "11": {"high": [66.8, 21.3, 11.8], "low": [66.7, 20.9, 12.3]},
+    "12": {"high": [66.9, 20.4, 12.7], "low": [65.1, 20.8, 14.1]},
+    "13": {"high": [63.1, 23.0, 13.9], "low": [65.6, 21.3, 13.1]},
+    "14": {"high": [66.0, 20.0, 14.0], "low": [71.5, 16.6, 11.9]},
+    "15": {"high": [59.9, 20.2, 19.9], "low": [57.4, 20.8, 21.8]},
+}
+
+
 def _hour_stats_metadata() -> dict:
-    """Hour open (gold), prior hour high / low (grey), breach arrow, "Back" diamond, zones."""
+    """NQ Stats look: dotted gold open, grey prior-hour high / low with a pink arrow at the sweep
+    and a blue diamond back at the open. The chart draws the sliced prior-hour box, the MAE /
+    MFE bands and the hover card from the raw outputs (stretch_* = MAE, follow_* = MFE)."""
     grey = "#8A919C"
     outputs: dict[str, dict] = {
         "open": {
             "type": "level",
-            "label": "Hour Open",
+            "label": "Open",
             "labelColor": SDEV_LABEL_COLOR,
-            "showPrice": True,
             "markerFrom": "revert_at",
-            "markerColor": "#F2D16B",
-            "markerText": "Back",
-            "plotOptions": {"lineWidth": 1, "lineStyle": 0, "color": "#E9A23B"},
+            "markerColor": "#3B9CFF",
+            "plotOptions": {"lineWidth": 1, "lineStyle": DOTTED, "color": "#C8962E"},
         },
     }
-    for key, label, touch, value, arrow in (
-        ("ph", "Prior H", "high", 1, "#3FB950"),
-        ("pl", "Prior L", "low", -1, "#E0574A"),
-    ):
+    for key, label, touch, value in (("ph", "PHH", "high", 1), ("pl", "PHL", "low", -1)):
         outputs[key] = {
             "type": "level",
             "label": label,
             "labelColor": SDEV_LABEL_COLOR,
-            "showPrice": True,
             "touch": touch,
             "touchWhen": {"key": "side", "equals": value},
             "touchShape": "arrow",
-            "touchText": "Hit",
-            "touchColor": arrow,
+            "touchColor": "#D946EF",
             "plotOptions": {"lineWidth": 1, "lineStyle": 0, "color": grey},
         }
-    for zone, title, color in (
-        ("stretch", "MAE", "#3FB950"),
-        ("follow", "MFE", "#E9C46A"),
-    ):
-        for edge, words in (("near", "median"), ("far", "P90")):
-            outputs[f"{zone}_{edge}"] = {
-                "type": "box",
-                "box": f"hour_{zone}",
-                "edge": edge,
-                "label": title,
-                "edgeLabel": f"{title} · {words}",
-                "plotOptions": {"color": color, "fillOpacity": 0.1},
-            }
-    # The chart draws the zones for the current hour only; past hours show them on hover.
-    guide = {"kind": "hour_stats", "source": "ES 2016-2025", "hours": HOUR_RATES}
+    guide = {"kind": "hour_stats", "source": "ES 2016-2025", "hours": HOUR_RATES, "slices": HOUR_SLICES}
     return {"overlay": True, "outputs": outputs, "guide": guide}
-
 
 # Breaks (IB / RTH / ETH), ES 2016-2025 1-minute data. "upper" etc. are where the open sat
 # inside the prior range (thirds) -> [high hit %, low hit %]. "held" = the far side never hit.

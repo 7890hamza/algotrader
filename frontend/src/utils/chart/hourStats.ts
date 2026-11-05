@@ -1,6 +1,6 @@
 import type { IndicatorDataPoint, JsonObject } from '@/types/contracts';
 
-import { formatClock, formatPrice, type SessionTag } from './alnGuide';
+import { formatClock, formatPrice, type SessionBox, type SessionTag } from './alnGuide';
 
 /** ES 2016-2025 rates for one New York hour (see indicator-api HOUR_RATES). */
 export interface HourRates {
@@ -165,4 +165,181 @@ export function tidyHourSegments<T extends { id: string; endTime: number; label:
     if (s.endTime !== lastTime) return { ...s, label: '', showPrice: false, touchText: undefined, markerText: undefined };
     return { ...s, label: SHORT_LABELS[s.label] ?? s.label, labelColor: '#9aa4b2', compact: true };
   });
+}
+
+/** Share of prior-hour-high / -low breaks in each 20-minute slice, by New York hour. */
+export type HourSlices = Record<string, { high: [number, number, number]; low: [number, number, number] }>;
+
+export function readHourSlices(guide: JsonObject | undefined): HourSlices {
+  return (guide && typeof guide.slices === 'object' && guide.slices !== null ? guide.slices : {}) as unknown as HourSlices;
+}
+
+const MAE_COLOR = '#14b8a6';
+const MFE_COLOR = '#c026d3';
+const BOX_COLOR = '#2e7d4f';
+const FADED_GREY = 'rgba(138, 145, 156, 0.45)';
+const FADED_GOLD = 'rgba(200, 150, 46, 0.45)';
+const SLICE_WORDS = ['0–19', '20–39', '40–59'];
+/** Bands run from the median toward the 75th percentile, this share of the way (thin, like NQ Stats). */
+const BAND_SHARE = 0.45;
+
+interface HourRun {
+  points: IndicatorDataPoint[];
+  start: number;
+  end: number;
+  open: number;
+  ph: number | null;
+  pl: number | null;
+  setup: boolean;
+  breach: IndicatorDataPoint | undefined;
+  last: IndicatorDataPoint;
+}
+
+function hourRuns(points: readonly IndicatorDataPoint[]): HourRun[] {
+  const sorted = [...points]
+    .filter((p) => Number.isFinite(Number(p.timestamp_ms)) && num(p, 'open') !== null)
+    .sort((a, b) => Number(a.timestamp_ms) - Number(b.timestamp_ms));
+  const runs: IndicatorDataPoint[][] = [];
+  for (const point of sorted) {
+    const run = runs[runs.length - 1];
+    const prev = run?.[run.length - 1];
+    const same = prev !== undefined && num(prev, 'open') === num(point, 'open') && num(prev, 'ph') === num(point, 'ph')
+      && Number(point.timestamp_ms) - Number(run[0].timestamp_ms) < 3_600_000;
+    if (same) run.push(point);
+    else runs.push([point]);
+  }
+  return runs.map((run) => ({
+    points: run,
+    start: Math.floor(Number(run[0].timestamp_ms) / 1000),
+    end: Math.floor(Number(run[0].timestamp_ms) / 1000) + 3600,
+    open: num(run[0], 'open')!,
+    ph: num(run[0], 'ph'),
+    pl: num(run[0], 'pl'),
+    setup: num(run[0], 'setup') === 1,
+    breach: run.find((p) => num(p, 'side') !== null),
+    last: run[run.length - 1],
+  }));
+}
+
+/** The fields of a session level segment this layout touches. */
+export interface SessionLevelSegmentLike {
+  id: string;
+  startTime: number;
+  endTime: number;
+  label: string;
+  color: string;
+  showPrice: boolean;
+  labelColor: string;
+  compact?: boolean;
+  touchText?: string;
+  touchColor?: string;
+  markerText?: string;
+  markerColor?: string;
+  sessionEndTime: number | null;
+}
+
+function barSecondsOf(points: readonly IndicatorDataPoint[]): number {
+  let smallest = Number.POSITIVE_INFINITY;
+  for (let i = 1; i < points.length; i += 1) {
+    const d = (Number(points[i].timestamp_ms) - Number(points[i - 1].timestamp_ms)) / 1000;
+    if (d > 0 && d < smallest) smallest = d;
+  }
+  return Number.isFinite(smallest) ? smallest : 60;
+}
+
+/**
+ * NQ Stats-style Hour Stats: for the running hour, a dotted prior-high / prior-low box split in
+ * three 20-minute slices with the break odds above / below each, the open labeled "XX% @ Open"
+ * once a level is swept, and the MAE (teal, past the swept level) and MFE (magenta, past the open)
+ * bands across the hour. Earlier hours keep faded lines and bands. Hovering an hour's box or bands
+ * opens a play-by-play card.
+ */
+export function layoutHourStats<T extends SessionLevelSegmentLike>(
+  points: readonly IndicatorDataPoint[],
+  segments: readonly T[],
+  hours: Record<string, HourRates>,
+  slices: HourSlices,
+  timeZone: string,
+): { segments: T[]; boxes: SessionBox[] } {
+  const runs = hourRuns(points);
+  if (!runs.length) return { segments: [], boxes: [] };
+  const bar = barSecondsOf(points);
+  const current = runs[runs.length - 1];
+  const clock = (ms: number): string => formatClock(ms, timeZone);
+  const boxes: SessionBox[] = [];
+  const cards = new Map<number, string[]>();
+  for (const run of runs) {
+    const live = run === current;
+    const nyHour = Number(NEW_YORK_HOUR.format(new Date(run.start * 1000)));
+    const rates = hours[String(nyHour)];
+    const sl = slices[String(nyHour)];
+    const label = new Date(run.start * 1000).toLocaleTimeString('en-US', { hour: 'numeric', timeZone });
+    const lines = [`${label} hour · prior hour ${run.pl !== null ? formatPrice(run.pl) : '?'}–${run.ph !== null ? formatPrice(run.ph) : '?'} · open ${formatPrice(run.open)}`];
+    const endT = run.end - bar;
+    if (!run.setup) {
+      lines.push("The hour opened outside the prior hour's range, so there's no setup this hour.");
+    } else if (!run.breach) {
+      if (live) {
+        const minute = Math.floor((Math.floor(Number(run.last.timestamp_ms) / 1000) - run.start) / 60);
+        const seg = Math.max(0, Math.min(2, Math.floor(minute / 20)));
+        if (sl) lines.push(`Waiting for a break. In this hour, prior-high breaks came ${sl.high[0]}% / ${sl.high[1]}% / ${sl.high[2]}% in minutes 0–19 / 20–39 / 40–59 (prior low: ${sl.low[0]}% / ${sl.low[1]}% / ${sl.low[2]}%).`);
+        const r = rates?.segs[String(seg)];
+        if (r) lines.push(`A break now (minutes ${SLICE_WORDS[seg]}) came back to the open ${Math.round(r[0])}% of the time.`);
+      } else {
+        lines.push("Price stayed inside the prior hour's range all hour.");
+      }
+    } else {
+      const side = num(run.breach, 'side')!;
+      const seg = Math.max(0, Math.min(2, num(run.breach, 'seg') ?? 0));
+      const r = rates?.segs[String(seg)];
+      const lvl = side > 0 ? run.ph : run.pl;
+      const word = side > 0 ? 'high' : 'low';
+      lines.push(`1. ${clock(Number(num(run.breach, 'breach_at')))}: the prior hour ${word}${lvl !== null ? ` ${formatPrice(lvl)}` : ''} got swept (minutes ${SLICE_WORDS[seg]}).`);
+      if (r) lines.push(`2. Breaks in that slice came back to the open ${Math.round(r[0])}% of the time (${r[1].toLocaleString()} breaks). So about ${10 - Math.round(r[0] / 10)} in 10 don't.`);
+      const sN = num(run.breach, 'stretch_near');
+      const sM = num(run.breach, 'stretch_mid');
+      const fN = num(run.breach, 'follow_near');
+      const fM = num(run.breach, 'follow_mid');
+      if (sN !== null && sM !== null) {
+        lines.push(`3. MAE (teal): before turning back, half of hours stretched to ${formatPrice(sN)} past the ${word}, 3 in 4 to ${formatPrice(sM)}. Well beyond that, the idea is likely wrong.`);
+        const sB = sN + (sM - sN) * BAND_SHARE; // a thin band from the typical stretch toward the 3-in-4 one
+        boxes.push({ id: `hs_mae@${run.start}`, startTime: run.start, endTime: endT, high: Math.max(sN, sB), low: Math.min(sN, sB), color: MAE_COLOR, label: '', noLabels: true, fillOpacity: live ? 0.3 : 0.08 });
+      }
+      if (fN !== null && fM !== null) {
+        lines.push(`4. MFE (magenta): after getting back to the open, half of hours ran on to ${formatPrice(fN)}, 3 in 4 to ${formatPrice(fM)}. That's the next target.`);
+        const fB = fN + (fM - fN) * BAND_SHARE;
+        boxes.push({ id: `hs_mfe@${run.start}`, startTime: run.start, endTime: endT, high: Math.max(fN, fB), low: Math.min(fN, fB), color: MFE_COLOR, label: '', noLabels: true, fillOpacity: live ? 0.28 : 0.08 });
+      }
+      const back = num(run.last, 'revert_at');
+      lines.push(back !== null ? `5. ${clock(back)}: back at the open ✓.` : live ? `5. Watching for the return to the open ${formatPrice(run.open)}.` : '5. It did not come back to the open.');
+    }
+    cards.set(run.start, lines);
+    if (live && run.ph !== null && run.pl !== null) {
+      boxes.push({
+        id: `hs_box@${run.start}`, startTime: run.start, endTime: endT, high: run.ph, low: run.pl, color: BOX_COLOR, label: '',
+        noLabels: true, fillOpacity: 0, dashed: true, hoverLines: lines,
+        slices: sl ? { times: [run.start + 1200, run.start + 2400], top: sl.high.map((v) => `${Math.round(v)}%`), bottom: sl.low.map((v) => `${Math.round(v)}%`) } : undefined,
+      });
+    }
+  }
+  for (const b of boxes) if (!b.hoverLines) b.hoverLines = cards.get(b.startTime);
+  const out = segments.map((s) => {
+    const run = runs.find((r) => s.startTime >= r.start && s.startTime < r.end);
+    const key = s.id.split('@')[0];
+    if (!run) return s;
+    if (run !== current) {
+      return { ...s, label: '', showPrice: false, touchText: undefined, markerText: undefined, color: key === 'open' ? FADED_GOLD : FADED_GREY };
+    }
+    const side = run.breach ? num(run.breach, 'side') : null;
+    const seg = run.breach ? Math.max(0, Math.min(2, num(run.breach, 'seg') ?? 0)) : null;
+    const rates = hours[String(Number(NEW_YORK_HOUR.format(new Date(run.start * 1000))))];
+    let text = s.label;
+    if (key === 'open') {
+      const r = seg !== null ? rates?.segs[String(seg)] : undefined;
+      text = r ? `${Math.round(r[0])}% @ Open${num(run.last, 'revert_at') !== null ? ' ✓' : ''}` : 'Open';
+    } else if (key === 'ph') text = side === 1 ? 'PHH Swept' : 'PHH';
+    else if (key === 'pl') text = side === -1 ? 'PHL Swept' : 'PHL';
+    return { ...s, label: text, showPrice: false, compact: true, labelColor: '#c9d1d9', touchText: undefined, markerText: undefined, sessionEndTime: run.end - bar };
+  });
+  return { segments: out, boxes };
 }

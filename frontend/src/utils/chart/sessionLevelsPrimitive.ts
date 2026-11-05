@@ -42,7 +42,11 @@ interface DrawableBox {
   right: number;
   top: number;
   bottom: number;
+  /** x of each slice divider (Hour Stats). */
+  dividers?: number[];
 }
+
+const SLICE_FONT = '500 10.5px -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif';
 
 function withAlpha(color: string, alpha: number): string {
   const hex = /^#([0-9a-f]{6})$/i.exec(color);
@@ -63,14 +67,39 @@ class SessionBoxesRenderer implements IPrimitivePaneRenderer {
     target.useMediaCoordinateSpace(({ context, mediaSize }) => {
       context.save();
       if (this.layer === 'fill') {
-        for (const { box, left, right, top, bottom } of this.boxes) {
+        for (const { box, left, right, top, bottom, dividers } of this.boxes) {
           const width = Math.max(1, right - left);
           const height = Math.max(1, bottom - top);
           context.fillStyle = withAlpha(box.color, box.fillOpacity ?? BOX_FILL_ALPHA);
           context.fillRect(left, top, width, height);
+          if (box.fillOpacity !== undefined && box.fillOpacity > 0 && box.noLabels && !box.title && !box.dashed) continue; // plain bands
           context.strokeStyle = withAlpha(box.color, box.fillOpacity === 0 ? 1 : 0.75);
           context.lineWidth = 1;
+          if (box.dashed) context.setLineDash([2, 3]);
           context.strokeRect(crisp(left), crisp(top), Math.round(width), Math.round(height));
+          if (dividers?.length && box.slices) {
+            context.strokeStyle = 'rgba(138, 145, 156, 0.45)';
+            for (const x of dividers) {
+              context.beginPath();
+              context.moveTo(crisp(x), top);
+              context.lineTo(crisp(x), bottom);
+              context.stroke();
+            }
+            const edges = [left, ...dividers, right];
+            context.font = SLICE_FONT;
+            context.fillStyle = '#7d8590';
+            context.textAlign = 'center';
+            box.slices.top.forEach((t, i) => {
+              if (edges[i + 1] === undefined) return;
+              const cx = (edges[i] + edges[i + 1]) / 2;
+              context.textBaseline = 'bottom';
+              context.fillText(t, cx, top - 3);
+              context.textBaseline = 'top';
+              context.fillText(box.slices!.bottom[i] ?? '', cx, bottom + 3);
+            });
+            context.textAlign = 'left';
+          }
+          context.setLineDash([]);
         }
       } else {
         for (const { box, left, right, top, bottom } of this.boxes) {
@@ -737,7 +766,7 @@ export class SessionLevelsPrimitive implements ISeriesPrimitive<Time> {
     for (const b of this.boxes) {
       if (!b.hoverLines?.length) continue;
       const x0 = this.timeToX(b.startTime);
-      const x1 = this.timeToX(b.endTime);
+      const x1 = this.futureTimeToX(Number.POSITIVE_INFINITY, b.endTime) ?? this.timeToX(b.endTime);
       const top = params.series.priceToCoordinate(b.high);
       const bottom = params.series.priceToCoordinate(b.low);
       if (x0 === null || x1 === null || top === null || bottom === null) continue;
@@ -880,13 +909,16 @@ export class SessionLevelsPrimitive implements ISeriesPrimitive<Time> {
     const timeScale = params.chart.timeScale();
     const half = Math.max(1, timeScale.options().barSpacing / 2);
     const drawables: DrawableBox[] = [];
+    // Times past the last candle (a running hour's end) are projected forward bar by bar.
+    const xAt = (time: number): number | null => this.futureTimeToX(Number.POSITIVE_INFINITY, time) ?? (() => { const x = this.timeToX(time); return x === null ? null : Number(x); })();
     for (const box of this.boxes) {
       const start = this.timeToX(box.startTime);
-      const end = this.timeToX(box.endTime);
+      const end = xAt(box.endTime);
       const top = params.series.priceToCoordinate(box.high);
       const bottom = params.series.priceToCoordinate(box.low);
       if (start === null || end === null || top === null || bottom === null) continue;
-      drawables.push({ box, left: Number(start) - half, right: Number(end) + half, top: Number(top), bottom: Number(bottom) });
+      const dividers = box.slices?.times.map(xAt).filter((x): x is number => x !== null);
+      drawables.push({ box, left: Number(start) - half, right: end + half, top: Number(top), bottom: Number(bottom), dividers });
     }
     return drawables.length > 0 ? new SessionBoxesRenderer(drawables, layer, this.precision) : null;
   }

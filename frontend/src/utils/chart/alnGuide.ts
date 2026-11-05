@@ -25,6 +25,10 @@ export interface SessionBox {
   title?: string;
   /** Plain-language card shown when the cursor is inside the box. */
   hoverLines?: string[];
+  /** Dotted outline instead of a solid one (Hour Stats' prior-hour box). */
+  dashed?: boolean;
+  /** Dotted dividers at these times, with a small text above / below each slice (Hour Stats). */
+  slices?: { times: number[]; top: string[]; bottom: string[] };
 }
 
 export interface AlnPatternStats {
