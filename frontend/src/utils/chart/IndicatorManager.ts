@@ -12,7 +12,7 @@ import {
   type SessionTag,
 } from './alnGuide';
 import { DEFAULT_CHART_TIME_ZONE } from './chartTimeZone';
-import { buildBreaksTags, readBreaksGuide, tidyBreakSegments } from './breaks';
+import { buildBreaksTags, quietPastSegments, readBreaksGuide, tidyBreakSegments } from './breaks';
 import { buildRangeBar, type RangeBar } from './rangeBar';
 import { buildHourTags, currentHourBoxes, readHourStatsGuide, tidyHourSegments } from './hourStats';
 import {
@@ -233,8 +233,12 @@ export class IndicatorManager {
         : hours
           ? buildHourTags(points, hours, DEFAULT_CHART_TIME_ZONE)
           : breakRates ? buildBreaksTags(points, breakRates, DEFAULT_CHART_TIME_ZONE) : [];
-    // Breaks keeps past sessions' lines but drops their text.
-    const drawn = quiet ? tidyHourSegments(segments, lastTime) : breakRates ? tidyBreakSegments(segments, lastTime) : segments;
+    // Breaks keeps past sessions' lines but drops their text; MTF SDEV labels only the running candle.
+    const drawn = quiet
+      ? tidyHourSegments(segments, lastTime)
+      : breakRates
+        ? tidyBreakSegments(segments, lastTime)
+        : indicator.info.guide?.kind === 'mtf_sdev' ? quietPastSegments(segments, lastTime) : segments;
     const rangeBar = buildRangeBar(points, indicator.info.guide);
     this.chartManager.setSessionLevels(id, PRICE_SERIES_KEY, drawn, undefined, boxes, tags, [], [], rangeBar);
     // Engulfing candles highlight the levels other indicators draw, so redraw them.

@@ -466,6 +466,8 @@ def _mtf_sdev_metadata() -> dict:
     outputs: dict[str, dict] = {}
     for key, label, scale in MTF_TIMEFRAMES:
         extra: dict = {} if scale else {"autoscale": False}
+        if key in ("w", "m"):
+            extra["joinGaps"] = True  # one line per week / month, through the daily CME break
         prefix = "" if key == "d" else f"{label} "
         outputs[f"{key}_open"] = {
             "type": "level", "label": f"{label} Open", "labelColor": SDEV_LABEL_COLOR,
@@ -486,7 +488,7 @@ def _mtf_sdev_metadata() -> dict:
             "touch": touch, "touchWhen": {"key": when, "equals": 1}, "touchShape": "arrow",
             "touchText": "Hit", "touchColor": grey,
             "plotOptions": {"lineWidth": 1, "lineStyle": 0, "color": grey},
-            **({} if scale else {"autoscale": False}),
+            **({} if scale else {"autoscale": False, "joinGaps": True}),
         }
     return {"overlay": True, "outputs": outputs, "guide": {"kind": "mtf_sdev", "rangeColor": "#378ADD"}}
 

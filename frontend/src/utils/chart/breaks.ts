@@ -300,3 +300,11 @@ export function tidyBreakSegments<T extends { endTime: number; label: string; sh
       : { ...s, label: '', showPrice: false, touchText: undefined },
   );
 }
+
+/** MTF SDEV: only the running candle's lines keep their labels; older ones stay as plain lines. */
+export function quietPastSegments<T extends { endTime: number; label: string; showPrice: boolean; touchText?: string }>(
+  segments: readonly T[],
+  lastTime: number,
+): T[] {
+  return segments.map((s) => (s.endTime === lastTime ? s : { ...s, label: '', showPrice: false, touchText: undefined }));
+}

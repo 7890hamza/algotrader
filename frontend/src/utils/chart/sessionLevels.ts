@@ -124,6 +124,8 @@ export function buildSessionLevelSegments(
     const touchText = typeof output.touchText === 'string' ? output.touchText : undefined;
     const markerText = typeof output.markerText === 'string' ? output.markerText : undefined;
     const noAutoscale = output.autoscale === false ? true : undefined;
+    // joinGaps: the line continues through breaks in the bars (weekly / monthly levels).
+    const joinGaps = output.joinGaps === true;
     // sessionMinutes on an output: its own window length (multi-session indicators).
     const ownSeconds = typeof output.sessionMinutes === 'number' ? output.sessionMinutes * 60 : sessionSeconds;
     let current: SessionLevelSegment | null = null;
@@ -145,7 +147,7 @@ export function buildSessionLevelSegments(
       const markerTime = typeof markerMs === 'number' && Number.isFinite(markerMs) ? Math.floor(markerMs / 1000) : null;
       const whenMet = whenKey !== null && sorted[i][whenKey] === when?.equals;
       const seg = current as SessionLevelSegment | null;
-      if (seg && Math.abs(seg.price - value) <= PRICE_EPSILON && time - seg.endTime <= maxGap) {
+      if (seg && Math.abs(seg.price - value) <= PRICE_EPSILON && (joinGaps || time - seg.endTime <= maxGap)) {
         seg.endTime = time;
         if (markerTime !== null) seg.markerTime = markerTime;
         if (whenMet) seg.touch = touch;
