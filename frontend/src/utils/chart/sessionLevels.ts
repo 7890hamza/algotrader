@@ -38,6 +38,10 @@ export interface SessionLevelSegment {
   compact?: boolean;
   /** Leave this line out of the price scale's autoscale (far weekly / monthly levels). */
   noAutoscale?: boolean;
+  /** Short text written on the line, left of its label ("79% chance this gets hit"). */
+  note?: string;
+  /** Plain-language card shown when the cursor is on the line. */
+  hoverLines?: string[];
 }
 
 export interface SessionLevelOptions {

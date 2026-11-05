@@ -375,6 +375,9 @@ BREAK_RATES: dict = {
     "eth": {
         "inside": {"n": 2164, "either": 86.9,
                    "upper": [80.0, 20.5], "middle": [48.0, 46.4], "lower": [24.3, 76.2]},
+        # Seen from the 6:30 AM PT open: one side already hit overnight -> the other side held
+        # 85.2%; neither hit yet -> one gets hit by 2 PM 64.2%.
+        "overnight": {"other_held": 85.2, "n_one": 1335, "one_by_close": 64.2, "n_none": 794},
     },
 }
 
@@ -401,7 +404,7 @@ def _breaks_metadata() -> dict:
         return out
 
     outputs: dict[str, dict] = {
-        "prth_h": level("pRTH High", grey, touch="high", when="rth_touch_h"),
+        "prth_h": level("pRTH High", grey, touch="high", when="rth_touch_h"),  # odds note + hover from the chart
         "prth_l": level("pRTH Low", grey, touch="low", when="rth_touch_l"),
         "ib_h": level("IB High", blue, touch="high"),
         "ib_l": level("IB Low", blue, touch="low"),
@@ -411,13 +414,18 @@ def _breaks_metadata() -> dict:
         "peth_h": level("pETH High", purple, style=2, touch="high", when="eth_touch_h"),
         "peth_l": level("pETH Low", purple, style=2, touch="low", when="eth_touch_l"),
     }
+    # Each session's own range as a see-through labeled box: the next day's pRTH / pETH.
     for key, edge in (("rth_box_h", "high"), ("rth_box_l", "low")):
-        outputs[key] = {"type": "box", "box": "rth_day", "edge": edge, "label": "RTH",
-                        "boxLabels": False, "plotOptions": {"color": grey, "fillOpacity": 0.04}}
+        outputs[key] = {"type": "box", "box": "rth_day", "edge": edge, "label": "RTH", "boxTitle": "pRTH",
+                        "boxLabels": False, "plotOptions": {"color": blue, "fillOpacity": 0.13}}
+    for key, edge in (("eth_box_h", "high"), ("eth_box_l", "low")):
+        outputs[key] = {"type": "box", "box": "eth_day", "edge": edge, "label": "ETH", "boxTitle": "pETH",
+                        "boxLabels": False, "plotOptions": {"color": purple, "fillOpacity": 0.07}}
     for key, edge in (("ib_box_h", "high"), ("ib_box_l", "low")):
         outputs[key] = {"type": "box", "box": "ib", "edge": edge, "label": "IB", "boxCompact": True,
                         "plotOptions": {"color": blue, "fillOpacity": 0}}
-    guide = {"kind": "breaks", "source": "ES 2016-2025", "rates": BREAK_RATES}
+    guide = {"kind": "breaks", "source": "ES 2016-2025", "rates": BREAK_RATES,
+             "retrace": {"zone": [0.4, 0.6], "up": "#3FB950", "down": "#E0574A", "leg": "#E9C46A"}}
     return {"overlay": True, "outputs": outputs, "guide": guide}
 
 

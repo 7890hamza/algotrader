@@ -30,7 +30,14 @@ IB
 
 ETH (on every bar of each ETH day that has a previous ETH day)
   ``peth_h`` / ``peth_l``, ``eth_setup`` (+1 / -1 open outside, 0 inside), ``eth_third``,
-  ``eth_touch_h`` / ``_l``, ``eth_hit_h`` / ``_l`` as for RTH.
+  ``eth_touch_h`` / ``_l``, ``eth_hit_h`` / ``_l`` as for RTH; ``eth_box_h`` / ``_l`` the day's
+  own range once a later ETH day exists.
+
+Retracement (RTH bars after the IB breaks; see ``_retrace``)
+  ``rt_dir`` trend (+1 / -1), ``rt_start`` / ``rt_end`` the current leg (prices) and
+  ``rt_start_at`` / ``rt_end_at`` (epoch ms), ``rt_zone`` the zone number, ``rt_out_at`` /
+  ``rt_out_px`` where price came back out of the zone, ``rt_res`` +1 / -1 once that zone
+  settles, ``rt_flip_at`` the latest trend change (epoch ms).
 """
 
 from __future__ import annotations
@@ -52,8 +59,9 @@ RTH_START, RTH_END, IB_END = 9 * 60 + 30, 16 * 60, 10 * 60 + 30
 ETH_START, ETH_END = 18 * 60, 17 * 60
 # How far past the broken IB side price ran (in IB ranges), ES 2016-2025: median, 75th pct.
 IB_EXTENSION = (0.62, 1.18)
-PARTS = ("rth", "ib", "eth", "targets")
-DEFAULT_SHOW = "rth, ib, targets"
+PARTS = ("rth", "ib", "eth", "targets", "retrace")
+DEFAULT_SHOW = "rth, ib, eth, targets, retrace"
+RETRACE_ZONE = (0.4, 0.6)
 
 OUTPUTS = [
     "prth_h", "prth_l", "rth_setup", "rth_third", "rth_touch_h", "rth_touch_l", "rth_hit_h", "rth_hit_l",
@@ -61,6 +69,9 @@ OUTPUTS = [
     "ib_box_h", "ib_box_l", "ib_h", "ib_l", "ib_mid", "ib_side", "ib_valid", "ib_hit_h", "ib_hit_l",
     "ib_ext_med", "ib_ext_p75",
     "peth_h", "peth_l", "eth_setup", "eth_third", "eth_touch_h", "eth_touch_l", "eth_hit_h", "eth_hit_l",
+    "eth_box_h", "eth_box_l",
+    "rt_dir", "rt_start", "rt_end", "rt_zone", "rt_start_at", "rt_end_at", "rt_out_at", "rt_out_px", "rt_res",
+    "rt_flip_at",
 ]
 COL = {name: i for i, name in enumerate(OUTPUTS)}
 
@@ -103,6 +114,95 @@ def _levels(out, rows, high, low, open_, epoch_ms, ph, pl, cols, tick) -> None:
         if hits.any():
             k = int(np.argmax(hits))
             out[rows[k:], COL[col]] = epoch_ms[rows[k]]
+
+
+def _retrace(out, rows, post, ibh, ibl, high, low, close, epoch_ms, tick) -> None:
+    """After the IB breaks: follow each leg, its 40-60% zone, the "Out" and trend changes.
+
+    The first leg runs from the session's low (high) before the break to the newest high (low).
+    A pullback that reaches the 40% line, followed by a new extreme, starts a new leg from the
+    pullback's extreme; shallower pullbacks just extend the leg. "Out" = the first close back past
+    the 40% line after touching it (not on the touching bar); it wins (+1) when a new extreme
+    comes first and fails (-1) when price goes past 100% (the leg's start) first, which also
+    flips the trend.
+    """
+    c = {k: COL[k] for k in OUTPUTS if k.startswith("rt_")}
+    trend = 0
+    start = end = 0.0
+    start_r = end_r = 0
+    touched = False
+    retr: tuple[float, int] | None = None
+    zones: list[dict] = []
+    flip_at = np.nan
+
+    def new_zone(r: int) -> None:
+        zones.append({"rows": [], "touched": None, "out": None, "res": None})
+
+    def write(r: int) -> None:
+        z = zones[-1]
+        z["rows"].append(r)
+        out[r, c["rt_dir"]] = trend
+        out[r, c["rt_start"]], out[r, c["rt_end"]] = start, end
+        out[r, c["rt_zone"]] = len(zones) - 1
+        out[r, c["rt_start_at"]], out[r, c["rt_end_at"]] = epoch_ms[start_r], epoch_ms[end_r]
+        if z["out"] is not None:
+            out[r, c["rt_out_at"]], out[r, c["rt_out_px"]] = epoch_ms[z["out"][0]], z["out"][1]
+        out[r, c["rt_flip_at"]] = flip_at
+
+    def resolve(z: dict, res: int) -> None:
+        if z["out"] is not None and z["res"] is None:
+            z["res"] = res
+            out[z["rows"], c["rt_res"]] = res
+
+    for r in post:
+        if trend == 0:
+            up, dn = high[r] >= ibh + tick, low[r] <= ibl - tick
+            if not (up or dn):
+                continue
+            trend = 1 if up else -1
+            seen = rows[rows <= r]
+            if trend == 1:
+                k = int(np.argmin(low[seen]))
+                start, start_r, end = float(low[seen][k]), int(seen[k]), float(high[r])
+            else:
+                k = int(np.argmax(high[seen]))
+                start, start_r, end = float(high[seen][k]), int(seen[k]), float(low[r])
+            end_r, touched, retr = int(r), False, None
+            new_zone(r)
+            write(r)
+            continue
+        s = trend
+        if (s == 1 and low[r] < start - tick) or (s == -1 and high[r] > start + tick):
+            resolve(zones[-1], -1)
+            flip_at = float(epoch_ms[r])
+            trend = -s
+            start, start_r = end, end_r
+            end, end_r = float(low[r] if s == 1 else high[r]), int(r)
+            touched, retr = False, None
+            new_zone(r)
+            write(r)
+            continue
+        if (s == 1 and high[r] > end) or (s == -1 and low[r] < end):
+            if touched and retr is not None:
+                resolve(zones[-1], 1)
+                start, start_r = retr
+                end, end_r = float(high[r] if s == 1 else low[r]), int(r)
+                new_zone(r)
+            else:
+                end, end_r = float(high[r] if s == 1 else low[r]), int(r)
+            touched, retr = False, None
+        else:
+            ex = float(low[r] if s == 1 else high[r])
+            if retr is None or (ex < retr[0] if s == 1 else ex > retr[0]):
+                retr = (ex, int(r))
+            p40 = end - RETRACE_ZONE[0] * (end - start)
+            z = zones[-1]
+            if not touched and (low[r] <= p40 if s == 1 else high[r] >= p40):
+                touched = True
+                z["touched"] = int(r)
+            if touched and z["out"] is None and z["touched"] != r and (close[r] > p40 if s == 1 else close[r] < p40):
+                z["out"] = (int(r), float(close[r]))
+        write(r)
 
 
 def breaks(
@@ -166,6 +266,8 @@ def breaks(
                         out[post[j:], COL[col]] = epoch_ms[post[j]]
                         if first is None or j < first[0]:
                             first = (j, side)
+                if "retrace" in parts:
+                    _retrace(out, rows, post, ibh, ibl, high, low, close, epoch_ms, tick)
                 if "targets" in parts and first is not None:
                     j, side = first
                     level = ibh if side == 1 else ibl
@@ -176,6 +278,9 @@ def breaks(
         in_eth = (minute >= ETH_START) | (minute < ETH_END)
         eth_day = day + (minute >= ETH_START)
         sessions = [g for g in _groups(eth_day, in_eth & (((eth_day + 3) % 7) < 5))]
+        for k in range(len(sessions) - 1):  # every ETH day with a later one: its faint box
+            out[sessions[k], COL["eth_box_h"]] = float(np.nanmax(high[sessions[k]]))
+            out[sessions[k], COL["eth_box_l"]] = float(np.nanmin(low[sessions[k]]))
         for k in range(1, len(sessions)):
             prev, rows = sessions[k - 1], sessions[k]
             ph, pl = float(np.nanmax(high[prev])), float(np.nanmin(low[prev]))

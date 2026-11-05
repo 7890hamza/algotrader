@@ -10,7 +10,11 @@ export interface BreakRates {
     gap_down: { n: number; held: number };
   };
   ib: { n: number; either: number; above: [number, number, number]; below: [number, number, number]; ext: [number, number] };
-  eth: { inside: { n: number; either: number; upper: [number, number]; middle: [number, number]; lower: [number, number] } };
+  eth: {
+    inside: { n: number; either: number; upper: [number, number]; middle: [number, number]; lower: [number, number] };
+    /** From the 6:30 AM PT open: one side hit overnight -> other side held %; none hit -> one hit by 2 PM %. */
+    overnight: { other_held: number; n_one: number; one_by_close: number; n_none: number };
+  };
 }
 
 export function readBreaksGuide(guide: JsonObject | undefined): BreakRates | null {

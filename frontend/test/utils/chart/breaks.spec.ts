@@ -10,7 +10,10 @@ const rates: BreakRates = {
     gap_down: { n: 356, held: 90.7 },
   },
   ib: { n: 2307, either: 98.1, above: [83.3, 43.9, 1247], below: [46.4, 81.8, 1045], ext: [0.62, 1.18] },
-  eth: { inside: { n: 2164, either: 86.9, upper: [80.0, 20.5], middle: [48.0, 46.4], lower: [24.3, 76.2] } },
+  eth: {
+    inside: { n: 2164, either: 86.9, upper: [80.0, 20.5], middle: [48.0, 46.4], lower: [24.3, 76.2] },
+    overnight: { other_held: 85.2, n_one: 1335, one_by_close: 64.2, n_none: 794 },
+  },
 };
 const M = 60_000;
 const OPEN = Date.UTC(2026, 9, 6, 13, 30); // Tue Oct 6, 9:30 New York = 6:30 Pacific

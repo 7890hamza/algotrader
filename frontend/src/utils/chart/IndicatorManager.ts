@@ -12,8 +12,10 @@ import {
   type SessionTag,
 } from './alnGuide';
 import { DEFAULT_CHART_TIME_ZONE } from './chartTimeZone';
-import { buildBreaksTags, mtfLayout, readBreaksGuide, tidyBreakSegments } from './breaks';
+import { layoutBreaks } from './breakLines';
+import { mtfLayout, readBreaksGuide } from './breaks';
 import { buildRangeBar, type RangeBar } from './rangeBar';
+import type { RetraceLayer } from './retrace';
 import { buildHourTags, currentHourBoxes, readHourStatsGuide, tidyHourSegments } from './hourStats';
 import {
   buildEngulfingLines,
@@ -65,6 +67,7 @@ export interface IndicatorChartManager {
     marks?: readonly CandleMark[],
     marus?: readonly MaruMark[],
     rangeBar?: RangeBar | null,
+    retrace?: RetraceLayer | null,
   ): boolean;
   clearSessionLevels?(id: string): boolean;
   sessionLevelsExcept?(id: string): NearbyLevel[];
@@ -231,26 +234,24 @@ export class IndicatorManager {
     const lastTime = Math.floor(Math.max(...points.map((p) => Number(p.timestamp_ms))) / 1000);
     // Hour Stats keeps past hours quiet: boxes only for the hour running now.
     const quiet = hours !== null;
-    // Breaks: only the IB box that is still forming keeps its labels.
-    const boxes = quiet
-      ? currentHourBoxes(allBoxes, lastTime)
-      : breakRates ? allBoxes.map((b) => (b.endTime === lastTime ? b : { ...b, noLabels: true })) : allBoxes;
-    const tbr = tbrTagSpecs(indicator.info.guide, indicator.parameters);
-    const tags = guide
-      ? buildSessionTags(points, boxes, DEFAULT_CHART_TIME_ZONE)
-      : tbr.length
-        ? buildTbrTags(points, tbr, DEFAULT_CHART_TIME_ZONE)
-        : hours
-          ? buildHourTags(points, hours, DEFAULT_CHART_TIME_ZONE)
-          : breakRates ? buildBreaksTags(points, breakRates, DEFAULT_CHART_TIME_ZONE) : [];
-    // Breaks keeps past sessions' lines but drops their text; MTF SDEV labels only the running candle.
-    const drawn = quiet
-      ? tidyHourSegments(segments, lastTime)
-      : breakRates
-        ? tidyBreakSegments(segments, lastTime)
+    if (breakRates) {
+      const b = layoutBreaks(points, segments, allBoxes, breakRates, indicator.info.guide, DEFAULT_CHART_TIME_ZONE, lastTime);
+      this.chartManager.setSessionLevels(id, PRICE_SERIES_KEY, b.segments, undefined, b.boxes, b.tags, [], [], null, b.retrace);
+    } else {
+      const boxes = quiet ? currentHourBoxes(allBoxes, lastTime) : allBoxes;
+      const tbr = tbrTagSpecs(indicator.info.guide, indicator.parameters);
+      const tags = guide
+        ? buildSessionTags(points, boxes, DEFAULT_CHART_TIME_ZONE)
+        : tbr.length
+          ? buildTbrTags(points, tbr, DEFAULT_CHART_TIME_ZONE)
+          : hours ? buildHourTags(points, hours, DEFAULT_CHART_TIME_ZONE) : [];
+      // MTF SDEV labels only the running candle.
+      const drawn = quiet
+        ? tidyHourSegments(segments, lastTime)
         : indicator.info.guide?.kind === 'mtf_sdev' ? mtfLayout(segments, lastTime, this.mtfOptions(indicator.parameters)) : segments;
-    const rangeBar = buildRangeBar(points, indicator.info.guide);
-    this.chartManager.setSessionLevels(id, PRICE_SERIES_KEY, drawn, undefined, boxes, tags, [], [], rangeBar);
+      const rangeBar = buildRangeBar(points, indicator.info.guide);
+      this.chartManager.setSessionLevels(id, PRICE_SERIES_KEY, drawn, undefined, boxes, tags, [], [], rangeBar);
+    }
     // Engulfing candles highlight the levels other indicators draw, so redraw them.
     for (const [otherId] of this.levelPoints) {
       if (otherId !== id && isEngulfingGuide(this.indicatorsStore.getById(otherId)?.info.guide)) {

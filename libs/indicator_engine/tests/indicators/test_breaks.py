@@ -101,12 +101,36 @@ class BreaksTests(unittest.TestCase):
         self.assertEqual(out[k + 10, COL["eth_hit_h"]], ms(2026, 10, 5, 18, 0) + 10 * 3_600_000)
         self.assertTrue(np.isnan(out[k, COL["prth_h"]]))
 
+    def test_retracement_leg_zone_out_and_flip(self) -> None:
+        # IB 100-110; break up to 120 (leg 100 -> 120, zone 112-108); dip to 110 touches it,
+        # close back above 112 = Out; new high 125 = win and a new leg 110 -> 125; then a drop
+        # below 110 (past 100%) flips the trend.
+        def path(i):
+            if i < 12:
+                return (105, 110 if i == 3 else 106, 100 if i == 1 else 104, 105)
+            seq = {12: (109, 115, 109, 114), 13: (114, 120, 113, 119), 14: (119, 119, 110, 111),
+                   15: (111, 113, 111, 112.5), 16: (112.5, 125, 112, 124), 17: (124, 124, 108, 108)}
+            return seq.get(i, (108, 108.5, 107.5, 108))
+        out = breaks(*arrays(rth_day(2026, 10, 6, path)), show="ib, retrace")
+        self.assertTrue(np.isnan(out[11, COL["rt_dir"]]))
+        self.assertEqual(out[12, COL["rt_dir"]], 1)
+        self.assertEqual(out[13, COL["rt_start"]], 100)
+        self.assertEqual(out[13, COL["rt_end"]], 120)
+        self.assertTrue(np.isnan(out[14, COL["rt_out_at"]]))  # touching bar is not the Out
+        self.assertEqual(out[15, COL["rt_out_px"]], 112.5)
+        self.assertEqual(out[15, COL["rt_res"]], 1)  # filled in once the new high came
+        self.assertEqual(out[16, COL["rt_start"]], 110)
+        self.assertEqual(out[16, COL["rt_zone"]], 1)
+        self.assertEqual(out[17, COL["rt_dir"]], -1)
+        self.assertEqual(out[17, COL["rt_start"]], 125)
+        self.assertEqual(out[17, COL["rt_flip_at"]], ms(2026, 10, 6, 9, 30) + 17 * 300_000)
+
     def test_parts_and_registry(self) -> None:
         self.assertEqual(parse_show("RTH; ib"), {"rth", "ib"})
         with self.assertRaises(ValueError):
             parse_show("rth, nope")
         spec = get_registry().get("breaks").spec
-        self.assertEqual(spec.parameters["show"]["default"], "rth, ib, targets")
+        self.assertEqual(spec.parameters["show"]["default"], "rth, ib, eth, targets, retrace")
 
 
 if __name__ == "__main__":

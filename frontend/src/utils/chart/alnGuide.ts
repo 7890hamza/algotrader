@@ -21,6 +21,10 @@ export interface SessionBox {
   fillOpacity?: number;
   /** Draw the box without any edge labels (Breaks' prior-day box). */
   noLabels?: boolean;
+  /** Small title inside the top-left corner ("pRTH"). */
+  title?: string;
+  /** Plain-language card shown when the cursor is inside the box. */
+  hoverLines?: string[];
 }
 
 export interface AlnPatternStats {
@@ -136,7 +140,7 @@ export function buildSessionBoxes(
   const sorted = sortedPoints(points);
   const maxGap = barSeconds(sorted) * MAX_GAP_BARS;
   interface Edge { key: string; label?: string }
-  interface Group { edges: Edge[]; color: string; label: string; fillOpacity?: number; noLabels?: boolean; compact?: boolean }
+  interface Group { edges: Edge[]; color: string; label: string; fillOpacity?: number; noLabels?: boolean; compact?: boolean; title?: string }
   const groups = new Map<string, Group>();
   for (const [key, output] of Object.entries(outputs)) {
     if (output.type !== 'box' || typeof output.box !== 'string') continue;
@@ -148,6 +152,7 @@ export function buildSessionBoxes(
       fillOpacity: typeof opacity === 'number' ? opacity : undefined,
       noLabels: output.boxLabels === false ? true : undefined,
       compact: output.boxCompact === true ? true : undefined,
+      title: typeof output.boxTitle === 'string' ? output.boxTitle : undefined,
     };
     // Edges are "high"/"low" (fixed) or any two names (e.g. "near"/"far"), sorted by price per bar.
     group.edges.push({ key, label: typeof output.edgeLabel === 'string' ? output.edgeLabel : undefined });
@@ -182,7 +187,7 @@ export function buildSessionBoxes(
       current = {
         id: `${name}@${time}`, startTime: time, endTime: time, high, low, color: group.color, label: group.label,
         highLabel: top.label, lowLabel: bottom.label, fillOpacity: group.fillOpacity,
-        ...(group.noLabels ? { noLabels: true } : {}), ...(group.compact ? { compact: true } : {}),
+        ...(group.noLabels ? { noLabels: true } : {}), ...(group.compact ? { compact: true } : {}), ...(group.title ? { title: group.title } : {}),
       };
     }
     if (current) boxes.push(current);

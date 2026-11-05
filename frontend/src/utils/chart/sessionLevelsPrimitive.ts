@@ -14,7 +14,9 @@ import type {
 } from 'lightweight-charts';
 
 import type { SessionBox, SessionTag } from './alnGuide';
+import { HoverCardRenderer } from './hoverCard';
 import { type RangeBar, RangeBarRenderer } from './rangeBar';
+import { type RetraceLayer, RetraceRenderer } from './retrace';
 import { DEFAULT_CHART_TIME_ZONE } from './chartTimeZone';
 import { BEAR_COLOR, BULL_COLOR, type CandleMark, type MaruMark, shortLevelName } from './engulfing';
 import {
@@ -72,6 +74,12 @@ class SessionBoxesRenderer implements IPrimitivePaneRenderer {
         }
       } else {
         for (const { box, left, right, top, bottom } of this.boxes) {
+          if (box.title && right - left > 30) {
+            context.font = BOX_LABEL_FONT;
+            context.fillStyle = withAlpha(box.color, 0.95);
+            context.textBaseline = 'top';
+            context.fillText(box.title, left + 5, top + 4);
+          }
           if (box.noLabels || (right - left < 40 && !box.compact)) continue;
           if (box.compact) {
             // Quiet labels tucked inside the box corners.
@@ -333,6 +341,7 @@ class SessionLevelsRenderer implements IPrimitivePaneRenderer {
           context.textBaseline = 'middle';
         }
       }
+      const notes: { right: number; w: number; top: number }[] = [];
       for (const { segment, y, touchX, touchTime, text, labelX, labelY } of placed) {
         if (touchX !== null && segment.touchShape === 'arrow') {
           // Up-touch: arrow above the line pointing down at it; down-touch: below, pointing up.
@@ -365,6 +374,24 @@ class SessionLevelsRenderer implements IPrimitivePaneRenderer {
         context.fillStyle = segment.labelColor;
         context.font = segment.compact ? COMPACT_FONT : LABEL_FONT;
         if (text) context.fillText(text, labelX, labelY);
+        if (segment.note) {
+          context.font = MARK_FONT;
+          const w = context.measureText(segment.note).width;
+          const right = labelX - LABEL_GAP_PX;
+          // Above the line, or below it when another note already sits there.
+          const clash = (top: number): boolean => notes.some((n) => right - w < n.right && right > n.right - n.w && Math.abs(n.top - top) < 13);
+          let top = y - 15;
+          if (clash(top)) top = y + 3;
+          if (!clash(top)) {
+            notes.push({ right, w, top });
+            context.fillStyle = segment.color;
+            context.textAlign = 'right';
+            context.textBaseline = 'top';
+            context.fillText(segment.note, right, top);
+            context.textAlign = 'left';
+            context.textBaseline = 'middle';
+          }
+        }
       }
 
       context.restore();
@@ -557,6 +584,30 @@ class RangeBarPaneView implements IPrimitivePaneView {
   }
 }
 
+class RetracePaneView implements IPrimitivePaneView {
+  constructor(private readonly primitive: SessionLevelsPrimitive) {}
+
+  zOrder(): PrimitivePaneViewZOrder {
+    return 'top';
+  }
+
+  renderer(): IPrimitivePaneRenderer | null {
+    return this.primitive.createRetraceRenderer();
+  }
+}
+
+class HoverCardPaneView implements IPrimitivePaneView {
+  constructor(private readonly primitive: SessionLevelsPrimitive) {}
+
+  zOrder(): PrimitivePaneViewZOrder {
+    return 'top';
+  }
+
+  renderer(): IPrimitivePaneRenderer | null {
+    return this.primitive.createHoverRenderer();
+  }
+}
+
 class SessionLevelsPaneView implements IPrimitivePaneView {
   constructor(private readonly primitive: SessionLevelsPrimitive) {}
 
@@ -583,6 +634,8 @@ export class SessionLevelsPrimitive implements ISeriesPrimitive<Time> {
     new MaruPaneView(this),
     new CandleMarksPaneView(this),
     new RangeBarPaneView(this),
+    new RetracePaneView(this),
+    new HoverCardPaneView(this),
   ];
   private attachedParams: SeriesAttachedParameter<Time, SeriesType> | null = null;
   private segments: SessionLevelSegment[];
@@ -591,11 +644,21 @@ export class SessionLevelsPrimitive implements ISeriesPrimitive<Time> {
   private marks: CandleMark[] = [];
   private marus: MaruMark[] = [];
   private rangeBar: RangeBar | null = null;
+  private retrace: RetraceLayer | null = null;
   private hoverX: number | null = null;
+  private hoverY: number | null = null;
   private readonly onCrosshairMove = (param: MouseEventParams<Time>): void => {
     const x = param.point ? Number(param.point.x) : null;
-    if (x === this.hoverX) return;
+    const y = param.point ? Number(param.point.y) : null;
+    if (x === this.hoverX && y === this.hoverY) return;
+    const yOnly = x === this.hoverX;
     this.hoverX = x;
+    this.hoverY = y;
+    if (this.hasHoverCards()) {
+      this.attachedParams?.requestUpdate();
+      return;
+    }
+    if (yOnly) return;
     if (this.tags.length || this.marks.length || this.marus.length) this.attachedParams?.requestUpdate();
   };
   private precision = 2;
@@ -627,6 +690,62 @@ export class SessionLevelsPrimitive implements ISeriesPrimitive<Time> {
   setMarus(marus: readonly MaruMark[]): void {
     this.marus = [...marus];
     this.attachedParams?.requestUpdate();
+  }
+
+  setRetrace(layer: RetraceLayer | null): void {
+    this.retrace = layer;
+    this.attachedParams?.requestUpdate();
+  }
+
+  private hasHoverCards(): boolean {
+    return this.segments.some((s) => s.hoverLines?.length) || this.boxes.some((b) => b.hoverLines?.length);
+  }
+
+  createRetraceRenderer(): IPrimitivePaneRenderer | null {
+    const params = this.attachedParams;
+    const layer = this.retrace;
+    if (!params || !layer) return null;
+    const pt = (time: number, price: number): { x: number; y: number } | null => {
+      const x = this.timeToX(time);
+      const y = params.series.priceToCoordinate(price);
+      return x === null || y === null ? null : { x: Number(x), y: Number(y) };
+    };
+    const legs = layer.legs.map((l) => pt(l.time, l.price)).filter((p): p is { x: number; y: number } => p !== null);
+    const marks = layer.marks
+      .map((mark) => ({ mark, p: pt(mark.time, mark.price) }))
+      .filter((m): m is { mark: typeof m.mark; p: { x: number; y: number } } => m.p !== null)
+      .map(({ mark, p }) => ({ mark, x: p.x, y: p.y }));
+    return new RetraceRenderer({ legs, marks, color: layer.color });
+  }
+
+  /** The card for the line under the cursor (within 5 px), else the smallest box around it. */
+  createHoverRenderer(): IPrimitivePaneRenderer | null {
+    const params = this.attachedParams;
+    const hx = this.hoverX;
+    const hy = this.hoverY;
+    if (!params || hx === null || hy === null || !this.hasHoverCards()) return null;
+    const half = Math.max(1, params.chart.timeScale().options().barSpacing / 2);
+    for (const s of this.segments) {
+      if (!s.hoverLines?.length) continue;
+      const x0 = this.timeToX(s.startTime);
+      const x1 = this.timeToX(s.sessionEndTime ?? s.endTime);
+      const y = params.series.priceToCoordinate(s.price);
+      if (x0 === null || x1 === null || y === null) continue;
+      if (Math.abs(Number(y) - hy) <= 5 && hx >= Number(x0) - half && hx <= Number(x1) + 120) return new HoverCardRenderer(s.hoverLines, hx, hy);
+    }
+    let best: { lines: string[]; area: number } | null = null;
+    for (const b of this.boxes) {
+      if (!b.hoverLines?.length) continue;
+      const x0 = this.timeToX(b.startTime);
+      const x1 = this.timeToX(b.endTime);
+      const top = params.series.priceToCoordinate(b.high);
+      const bottom = params.series.priceToCoordinate(b.low);
+      if (x0 === null || x1 === null || top === null || bottom === null) continue;
+      const inside = hx >= Number(x0) - half && hx <= Number(x1) + half && hy >= Number(top) && hy <= Number(bottom);
+      const area = (Number(x1) - Number(x0) + 1) * (Number(bottom) - Number(top) + 1);
+      if (inside && (!best || area < best.area)) best = { lines: b.hoverLines, area };
+    }
+    return best ? new HoverCardRenderer(best.lines, hx, hy) : null;
   }
 
   setRangeBar(bar: RangeBar | null): void {
@@ -675,7 +794,7 @@ export class SessionLevelsPrimitive implements ISeriesPrimitive<Time> {
   }
 
   paneViews(): readonly IPrimitivePaneView[] {
-    return this.segments.length > 0 || this.boxes.length > 0 || this.tags.length > 0 || this.marks.length > 0 || this.marus.length > 0 || this.rangeBar ? this.paneViewsList : EMPTY_PANE_VIEWS;
+    return this.segments.length > 0 || this.boxes.length > 0 || this.tags.length > 0 || this.marks.length > 0 || this.marus.length > 0 || this.rangeBar || this.retrace ? this.paneViewsList : EMPTY_PANE_VIEWS;
   }
 
   autoscaleInfo(startTimePoint: Logical, endTimePoint: Logical): AutoscaleInfo | null {
@@ -708,7 +827,10 @@ export class SessionLevelsPrimitive implements ISeriesPrimitive<Time> {
       const isStart = tag.anchor === 'start';
       if (!isStart && right - left < 60) continue;
       const hoverRight = isStart ? left + 260 : right;
-      const hovered = this.hoverX !== null && this.hoverX >= left && this.hoverX <= hoverRight;
+      const chipY = Number(top) - 20;
+      // A "start" chip opens only when the cursor is on the chip itself (lines below have their own cards).
+      const nearChip = !isStart || (this.hoverY !== null && Math.abs(this.hoverY - (chipY - 9)) <= 14);
+      const hovered = nearChip && this.hoverX !== null && this.hoverX >= left && this.hoverX <= hoverRight;
       // Above the box labels ("Asia H ...") that sit on top of each box.
       drawables.push({ tag, centerX: isStart ? left : (left + right) / 2, y: Number(top) - 20, hovered, span: hoverRight - left });
     }
