@@ -12,7 +12,7 @@ import {
   type SessionTag,
 } from './alnGuide';
 import { DEFAULT_CHART_TIME_ZONE } from './chartTimeZone';
-import { buildBreaksTags, quietPastSegments, readBreaksGuide, tidyBreakSegments } from './breaks';
+import { buildBreaksTags, mtfLayout, readBreaksGuide, tidyBreakSegments } from './breaks';
 import { buildRangeBar, type RangeBar } from './rangeBar';
 import { buildHourTags, currentHourBoxes, readHourStatsGuide, tidyHourSegments } from './hourStats';
 import {
@@ -188,6 +188,16 @@ export class IndicatorManager {
     }
   }
 
+  /** MTF SDEV drawing options from its past_days / stub_hours parameters. */
+  private mtfOptions(parameters: Record<string, { value?: unknown; default?: unknown }>): { pastDays: boolean; stubSeconds: number } {
+    const valueOf = (key: string): unknown => parameters[key]?.value ?? parameters[key]?.default;
+    const hours = Number(valueOf('stub_hours'));
+    return {
+      pastDays: ['on', 'true', 'yes', '1'].includes(String(valueOf('past_days') ?? '').trim().toLowerCase()),
+      stubSeconds: (Number.isFinite(hours) && hours > 0 ? hours : 3) * 3600,
+    };
+  }
+
   /** Session window length from the indicator's session_start/session_end. */
   private sessionSeconds(parameters: Record<string, { value?: unknown; default?: unknown }>): number | null {
     const valueOf = (key: string): unknown => parameters[key]?.value ?? parameters[key]?.default;
@@ -238,7 +248,7 @@ export class IndicatorManager {
       ? tidyHourSegments(segments, lastTime)
       : breakRates
         ? tidyBreakSegments(segments, lastTime)
-        : indicator.info.guide?.kind === 'mtf_sdev' ? quietPastSegments(segments, lastTime) : segments;
+        : indicator.info.guide?.kind === 'mtf_sdev' ? mtfLayout(segments, lastTime, this.mtfOptions(indicator.parameters)) : segments;
     const rangeBar = buildRangeBar(points, indicator.info.guide);
     this.chartManager.setSessionLevels(id, PRICE_SERIES_KEY, drawn, undefined, boxes, tags, [], [], rangeBar);
     // Engulfing candles highlight the levels other indicators draw, so redraw them.

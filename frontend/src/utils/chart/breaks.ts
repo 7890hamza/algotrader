@@ -308,3 +308,19 @@ export function quietPastSegments<T extends { endTime: number; label: string; sh
 ): T[] {
   return segments.map((s) => (s.endTime === lastTime ? s : { ...s, label: '', showPrice: false, touchText: undefined }));
 }
+
+/**
+ * MTF SDEV layout: by default only the running candles' lines are drawn, and the weekly /
+ * monthly lines (and PWH / PWL) are short stubs just left of price. With past days on, earlier
+ * lines stay as plain unlabeled lines.
+ */
+export function mtfLayout<T extends { id: string; startTime: number; endTime: number; label: string; showPrice: boolean; touchText?: string }>(
+  segments: readonly T[],
+  lastTime: number,
+  options: { pastDays: boolean; stubSeconds: number },
+): T[] {
+  if (options.pastDays) return quietPastSegments(segments, lastTime);
+  return segments
+    .filter((s) => s.endTime === lastTime)
+    .map((s) => (/^(w_|m_|pwh|pwl)/.test(s.id) ? { ...s, startTime: Math.max(s.startTime, lastTime - options.stubSeconds) } : s));
+}

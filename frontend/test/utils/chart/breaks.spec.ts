@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import type { IndicatorDataPoint } from '@/types/contracts';
-import { buildBreaksTags, inTen, readBreaksGuide, tidyBreakSegments, type BreakRates } from '@/utils/chart/breaks';
+import { buildBreaksTags, inTen, mtfLayout, readBreaksGuide, tidyBreakSegments, type BreakRates } from '@/utils/chart/breaks';
 
 const rates: BreakRates = {
   rth: {
@@ -77,5 +77,13 @@ describe('Breaks chips', () => {
     const [past, live] = tidyBreakSegments([seg, { ...seg, endTime: 20 }], 20);
     expect(past).toMatchObject({ label: '', showPrice: false, touchText: undefined });
     expect(live).toMatchObject({ label: 'pRTH High', compact: true });
+  });
+
+  it('MTF layout: only running lines, weekly as a short stub', () => {
+    const seg = (id: string, start: number, end: number) => ({ id, startTime: start, endTime: end, label: id, showPrice: false });
+    const out = mtfLayout([seg('d_open@1', 100, 9000), seg('d_open@0', 0, 50), seg('w_+1@0', 0, 9000)], 9000, { pastDays: false, stubSeconds: 3600 });
+    expect(out.map((s) => s.id)).toEqual(['d_open@1', 'w_+1@0']);
+    expect(out[1].startTime).toBe(5400);
+    expect(mtfLayout([seg('d_open@0', 0, 50)], 9000, { pastDays: true, stubSeconds: 3600 })[0].label).toBe('');
   });
 });

@@ -170,6 +170,10 @@ class MtfSDEV(IndicatorBase):
             "levels": {"type": "string", "default": DEFAULT_LEVELS},
             "lookback": {"type": "int", "default": 20, "min": 2},
             "lookback_m": {"type": "int", "default": 12, "min": 2},
+            # Drawing only (read by the chart): earlier candles' lines, and how long the
+            # weekly / monthly stubs beside price are.
+            "past_days": {"type": "string", "default": "off"},
+            "stub_hours": {"type": "int", "default": 3, "min": 1},
         },
         outputs=OUTPUTS,
         required_fields=["open", "high", "low", "close"],
