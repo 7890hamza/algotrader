@@ -82,10 +82,15 @@ export class RetraceToolController {
     this.render();
   }
 
-  /** Change the selected drawing's zone edges / extra lines (also the default for new ones). */
-  updateSelected(patch: { from?: number; to?: number; lines?: string }): void {
+  /**
+   * Change the selected drawing's zone edges / extra lines (also the default for new ones), or
+   * type an anchor's exact price.
+   */
+  updateSelected(patch: { from?: number; to?: number; lines?: string; aPrice?: number; bPrice?: number }): void {
     const d = this.store.drawings.find((x) => x.id === this.selectedId);
     if (!d) return;
+    if (patch.aPrice !== undefined && Number.isFinite(patch.aPrice) && patch.aPrice > 0) d.a = { ...d.a, price: patch.aPrice };
+    if (patch.bPrice !== undefined && Number.isFinite(patch.bPrice) && patch.bPrice > 0) d.b = { ...d.b, price: patch.bPrice };
     if (patch.from !== undefined && Number.isFinite(patch.from)) d.from = clampPct(patch.from);
     if (patch.to !== undefined && Number.isFinite(patch.to)) d.to = clampPct(patch.to);
     if (patch.lines !== undefined) d.lines = parseLevels(patch.lines);

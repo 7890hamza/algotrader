@@ -8,6 +8,12 @@
       {{ fmt(drawing.a.price) }} → {{ fmt(drawing.b.price) }} · {{ fmt(model.range) }} pts
     </div>
     <div class="rtc-row">
+      <span>Price</span>
+      <input class="rtc-price" :value="drawing.a.price" type="number" step="0.25" aria-label="First anchor price" data-testid="retrace-a-price" @change="onPrice('aPrice', $event)">
+      <span class="rtc-dim">→</span>
+      <input class="rtc-price" :value="drawing.b.price" type="number" step="0.25" aria-label="Second anchor price" data-testid="retrace-b-price" @change="onPrice('bPrice', $event)">
+    </div>
+    <div class="rtc-row">
       <span>Zone</span>
       <input :value="drawing.from" type="number" step="1" aria-label="Zone start percent" data-testid="retrace-from" @change="onPct('from', $event)">
       <span class="rtc-dim">to</span>
@@ -45,7 +51,7 @@ defineOptions({ name: 'RetraceToolCard' });
 const props = defineProps<{ drawing: RetraceDrawing }>();
 const emit = defineEmits<{
   remove: [];
-  update: [patch: { from?: number; to?: number; lines?: string }];
+  update: [patch: { from?: number; to?: number; lines?: string; aPrice?: number; bPrice?: number }];
 }>();
 
 const model = computed(() => buildRetraceModel(props.drawing));
@@ -54,6 +60,11 @@ const fmt = (v: number): string => v.toLocaleString('en-US', { minimumFractionDi
 function onPct(key: 'from' | 'to', event: Event): void {
   const value = Number((event.target as HTMLInputElement).value);
   if (Number.isFinite(value)) emit('update', { [key]: value });
+}
+
+function onPrice(key: 'aPrice' | 'bPrice', event: Event): void {
+  const value = Number((event.target as HTMLInputElement).value);
+  if (Number.isFinite(value) && value > 0) emit('update', { [key]: value });
 }
 
 function onLines(event: Event): void {
@@ -91,5 +102,6 @@ function onLines(event: Event): void {
 .rtc--down .rtc-zone { color: #e5534b; }
 .rtc input { width: 52px; background: rgba(255, 255, 255, 0.06); border: 1px solid rgba(255, 255, 255, 0.15); border-radius: 4px; color: #e6e6e6; padding: 2px 4px; font: inherit; }
 .rtc input.rtc-lines { width: 130px; }
+.rtc input.rtc-price { width: 76px; }
 .rtc-help { line-height: 1.35; }
 </style>

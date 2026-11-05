@@ -65,7 +65,7 @@
       v-if="rtSelected"
       :drawing="rtSelected"
       @remove="retraceTool?.removeSelected()"
-      @update="(patch: { from?: number; to?: number; lines?: string }) => retraceTool?.updateSelected(patch)"
+      @update="(patch: { from?: number; to?: number; lines?: string; aPrice?: number; bPrice?: number }) => retraceTool?.updateSelected(patch)"
     />
 
     <mt5-panel v-if="!isSecondPane" />

@@ -61,6 +61,8 @@ describe('RetraceToolController', () => {
     expect(selected).toMatchObject({ a: { time: 1010, price: 7680 }, b: { time: 1050, price: 7740 }, from: 40, to: 60 });
     c.updateSelected({ from: 38.2, to: 61.8, lines: '50, 100' });
     expect(vi.mocked(h.onChange).mock.calls.at(-1)![1]).toMatchObject({ from: 38.2, to: 61.8, lines: [50, 100] });
+    c.updateSelected({ aPrice: 7679.75, bPrice: 7739.75 });
+    expect(vi.mocked(h.onChange).mock.calls.at(-1)![1]).toMatchObject({ a: { time: 1010, price: 7679.75 }, b: { time: 1050, price: 7739.75 } });
     const h2 = host();
     const c2 = new RetraceToolController(h2);
     c2.setSymbol('ES');
