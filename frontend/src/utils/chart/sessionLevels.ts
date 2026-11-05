@@ -36,6 +36,8 @@ export interface SessionLevelSegment {
   markerText?: string;
   /** Small, quiet label (Hour Stats). */
   compact?: boolean;
+  /** Leave this line out of the price scale's autoscale (far weekly / monthly levels). */
+  noAutoscale?: boolean;
 }
 
 export interface SessionLevelOptions {
@@ -121,6 +123,7 @@ export function buildSessionLevelSegments(
     const touchColor = typeof output.touchColor === 'string' ? output.touchColor : undefined;
     const touchText = typeof output.touchText === 'string' ? output.touchText : undefined;
     const markerText = typeof output.markerText === 'string' ? output.markerText : undefined;
+    const noAutoscale = output.autoscale === false ? true : undefined;
     let current: SessionLevelSegment | null = null;
 
     const close = (): void => {
@@ -162,6 +165,7 @@ export function buildSessionLevelSegments(
         touchColor,
         touchText,
         markerText,
+        ...(noAutoscale ? { noAutoscale } : {}),
         labelColor,
         showPrice,
         markerTime,

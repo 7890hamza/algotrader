@@ -27,6 +27,8 @@ from .indicators import (
     Engulfing,
     HourStats,
     Breaks,
+    AlnSDEV,
+    MtfSDEV,
     SessionSDEV,
 )
 
@@ -52,6 +54,8 @@ def _create_registry() -> IndicatorRegistry:
             Engulfing(),
             HourStats(),
             Breaks(),
+            AlnSDEV(),
+            MtfSDEV(),
         ]
     )
     try:

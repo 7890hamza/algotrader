@@ -49,6 +49,7 @@ import type { SessionLevelSegment } from './sessionLevels';
 import { SessionLevelsPrimitive } from './sessionLevelsPrimitive';
 import type { SessionBox, SessionTag } from './alnGuide';
 import type { CandleMark, MaruMark, NearbyLevel } from './engulfing';
+import type { RangeBar } from './rangeBar';
 
 export type ChartSeriesType =
   | 'line'
@@ -488,6 +489,7 @@ export class ChartManager {
     tags: readonly SessionTag[] = [],
     marks: readonly CandleMark[] = [],
     marus: readonly MaruMark[] = [],
+    rangeBar: RangeBar | null = null,
   ): boolean {
     const seriesInfo = this.series.get(seriesKey);
     if (!seriesInfo) {
@@ -502,6 +504,7 @@ export class ChartManager {
         existing.primitive.setTags(tags);
         existing.primitive.setMarks(marks);
         existing.primitive.setMarus(marus);
+        existing.primitive.setRangeBar(rangeBar);
         existing.primitive.setSegments(segments);
         return true;
       }
@@ -513,6 +516,7 @@ export class ChartManager {
       primitive.setTags(tags);
       primitive.setMarks(marks);
       primitive.setMarus(marus);
+      primitive.setRangeBar(rangeBar);
       if (precision !== undefined) primitive.setPrecision(precision);
       seriesInfo.series.attachPrimitive(primitive);
       this.sessionLevelPrimitives.set(id, { seriesKey, series: seriesInfo.series, primitive });

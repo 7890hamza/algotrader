@@ -13,7 +13,7 @@ import numpy as np
 import pandas as pd
 import redis.asyncio as aioredis
 from algotrader_logger import get_logger
-from db_accessor_client import normalize_timeframe_code
+from db_accessor_client import normalize_timeframe_code, timeframe_to_minutes
 from indicator_engine import HistoryPolicy, ParamGrid, get_update_engine
 
 from app import ENGINE_REGISTRY, get_engine_id
@@ -40,6 +40,15 @@ def _redis_socket_timeout_seconds(block_ms: int) -> float | None:
     if block_ms <= 0:
         return None
     return (block_ms / 1000.0) + 1.0
+
+
+def _warmup_params(spec: "LiveStreamSpec") -> dict[str, Any]:
+    """Indicator parameters plus the chart's bar length, so warmups can be sized by calendar time."""
+    try:
+        minutes = timeframe_to_minutes(spec.timeframe)
+    except Exception:  # noqa: BLE001 - unknown codes keep the 1-minute assumption
+        minutes = 1
+    return {**spec.parameters, "_bar_minutes": minutes}
 
 
 @dataclass(frozen=True)
@@ -149,7 +158,7 @@ class LiveIndicatorManager:
             await self._ensure_redis()
             # Keep at least the indicator's warmup so long-lookback indicators
             # (such as session SDEV levels) can produce live values.
-            required_rows = ENGINE_REGISTRY.get(spec.engine_id).spec.warmup(spec.parameters)
+            required_rows = ENGINE_REGISTRY.get(spec.engine_id).spec.warmup(_warmup_params(spec))
             update_engine = get_update_engine(
                 history=HistoryPolicy(
                     mode="rolling", max_rows=max(self.history_rows, required_rows)
@@ -286,7 +295,7 @@ class LiveIndicatorManager:
         source: str,
     ) -> LiveIndicatorWarmupInfo:
         indicator = ENGINE_REGISTRY.get(spec.engine_id)
-        required = indicator.spec.warmup(spec.parameters)
+        required = indicator.spec.warmup(_warmup_params(spec))
         return LiveIndicatorWarmupInfo(
             required_bars=max(1, int(required)),
             seeded_bars=max(0, int(seeded_bars)),
@@ -295,7 +304,7 @@ class LiveIndicatorManager:
 
     async def _seed_warmup(self, spec: LiveStreamSpec, update_engine: Any) -> tuple[int, str]:
         indicator = ENGINE_REGISTRY.get(spec.engine_id)
-        warmup = max(1, int(indicator.spec.warmup(spec.parameters)))
+        warmup = max(1, int(indicator.spec.warmup(_warmup_params(spec))))
 
         warmup_df = self.candle_cache.get_tail(
             exchange=spec.exchange,

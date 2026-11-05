@@ -116,7 +116,8 @@ async def run_historical_indicator(
 
     engine_id = get_engine_id(indicator_id)
     indicator = ENGINE_REGISTRY.get(engine_id)
-    warmup = indicator.spec.warmup(indicator_params)
+    # The bar length lets long-lookback indicators (MTF SDEV) size their history by calendar time.
+    warmup = indicator.spec.warmup({**indicator_params, "_bar_minutes": timeframe_minutes})
     required_assets = metadata.get("inputs", [])
 
     fetch_start, fetch_limit, orig_start, orig_limit = adjust_fetch_bounds(

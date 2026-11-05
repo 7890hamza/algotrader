@@ -13,6 +13,7 @@ import {
 } from './alnGuide';
 import { DEFAULT_CHART_TIME_ZONE } from './chartTimeZone';
 import { buildBreaksTags, readBreaksGuide, tidyBreakSegments } from './breaks';
+import { buildRangeBar, type RangeBar } from './rangeBar';
 import { buildHourTags, currentHourBoxes, readHourStatsGuide, tidyHourSegments } from './hourStats';
 import {
   buildEngulfingLines,
@@ -63,10 +64,14 @@ export interface IndicatorChartManager {
     tags?: readonly SessionTag[],
     marks?: readonly CandleMark[],
     marus?: readonly MaruMark[],
+    rangeBar?: RangeBar | null,
   ): boolean;
   clearSessionLevels?(id: string): boolean;
   sessionLevelsExcept?(id: string): NearbyLevel[];
 }
+
+/** Guides whose past sessions are drawn quietly (lines without text). */
+const QUIET_GUIDES = new Set(['aln_sdev', 'mtf_sdev']);
 
 /** Key of the main candlestick series that session levels are drawn on. */
 const PRICE_SERIES_KEY = 'ohlc';
@@ -231,8 +236,11 @@ export class IndicatorManager {
         : hours
           ? buildHourTags(points, hours, DEFAULT_CHART_TIME_ZONE)
           : breakRates ? buildBreaksTags(points, breakRates, DEFAULT_CHART_TIME_ZONE) : [];
-    const drawn = quiet ? tidyHourSegments(segments, lastTime) : breakRates ? tidyBreakSegments(segments, lastTime) : segments;
-    this.chartManager.setSessionLevels(id, PRICE_SERIES_KEY, drawn, undefined, boxes, tags);
+    // Breaks, ALN SDEV and MTF SDEV keep past sessions' lines but drop their text.
+    const tidy = breakRates !== null || QUIET_GUIDES.has(String(indicator.info.guide?.kind));
+    const drawn = quiet ? tidyHourSegments(segments, lastTime) : tidy ? tidyBreakSegments(segments, lastTime) : segments;
+    const rangeBar = buildRangeBar(points, indicator.info.guide);
+    this.chartManager.setSessionLevels(id, PRICE_SERIES_KEY, drawn, undefined, boxes, tags, [], [], rangeBar);
     // Engulfing candles highlight the levels other indicators draw, so redraw them.
     for (const [otherId] of this.levelPoints) {
       if (otherId !== id && isEngulfingGuide(this.indicatorsStore.getById(otherId)?.info.guide)) {

@@ -20,12 +20,15 @@ INDICATOR_MAP: dict[int, str] = {
     12: "engulfing",
     13: "hour_stats",
     14: "breaks",
+    15: "aln_sdev",
+    16: "mtf_sdev",
 }
 
 
 # Kept so charts that already have them still load, but not offered for new charts:
-# AM TBR is now the "am" session of ALN TBR.
-HIDDEN_INDICATORS = {"am_tbr"}
+# AM TBR is now the "am" session of ALN TBR; Net Change SDEV and CME Open SDEV are the "am"
+# and "cme" sessions of ALN SDEV.
+HIDDEN_INDICATORS = {"am_tbr", "session_sdev", "cme_open_sdev"}
 
 
 def get_available_indicators() -> list[dict]:

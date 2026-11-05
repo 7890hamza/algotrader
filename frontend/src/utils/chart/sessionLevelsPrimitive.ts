@@ -14,6 +14,7 @@ import type {
 } from 'lightweight-charts';
 
 import type { SessionBox, SessionTag } from './alnGuide';
+import { type RangeBar, RangeBarRenderer } from './rangeBar';
 import { DEFAULT_CHART_TIME_ZONE } from './chartTimeZone';
 import { BEAR_COLOR, BULL_COLOR, type CandleMark, type MaruMark, shortLevelName } from './engulfing';
 import {
@@ -533,6 +534,18 @@ class CandleMarksPaneView implements IPrimitivePaneView {
   }
 }
 
+class RangeBarPaneView implements IPrimitivePaneView {
+  constructor(private readonly primitive: SessionLevelsPrimitive) {}
+
+  zOrder(): PrimitivePaneViewZOrder {
+    return 'top';
+  }
+
+  renderer(): IPrimitivePaneRenderer | null {
+    return this.primitive.createRangeBarRenderer();
+  }
+}
+
 class SessionLevelsPaneView implements IPrimitivePaneView {
   constructor(private readonly primitive: SessionLevelsPrimitive) {}
 
@@ -558,6 +571,7 @@ export class SessionLevelsPrimitive implements ISeriesPrimitive<Time> {
     new SessionTagsPaneView(this),
     new MaruPaneView(this),
     new CandleMarksPaneView(this),
+    new RangeBarPaneView(this),
   ];
   private attachedParams: SeriesAttachedParameter<Time, SeriesType> | null = null;
   private segments: SessionLevelSegment[];
@@ -565,6 +579,7 @@ export class SessionLevelsPrimitive implements ISeriesPrimitive<Time> {
   private tags: SessionTag[] = [];
   private marks: CandleMark[] = [];
   private marus: MaruMark[] = [];
+  private rangeBar: RangeBar | null = null;
   private hoverX: number | null = null;
   private readonly onCrosshairMove = (param: MouseEventParams<Time>): void => {
     const x = param.point ? Number(param.point.x) : null;
@@ -603,6 +618,28 @@ export class SessionLevelsPrimitive implements ISeriesPrimitive<Time> {
     this.attachedParams?.requestUpdate();
   }
 
+  setRangeBar(bar: RangeBar | null): void {
+    this.rangeBar = bar;
+    this.attachedParams?.requestUpdate();
+  }
+
+  createRangeBarRenderer(): IPrimitivePaneRenderer | null {
+    const params = this.attachedParams;
+    const bar = this.rangeBar;
+    if (!params || !bar) return null;
+    const y = (v: number): number | null => {
+      const c = params.series.priceToCoordinate(v);
+      return c === null ? null : Number(c);
+    };
+    const yHigh = y(bar.high);
+    const yLow = y(bar.low);
+    const yMid = y(bar.mid);
+    if (yHigh === null || yLow === null || yMid === null) return null;
+    const top = bar.adr ? y(Math.max(bar.high, bar.low + bar.adr)) : null;
+    const bottom = bar.adr ? y(Math.min(bar.low, bar.high - bar.adr)) : null;
+    return new RangeBarRenderer({ bar, yHigh, yLow, yMid, yTrackTop: top, yTrackBottom: bottom });
+  }
+
   getBoxes(): readonly SessionBox[] {
     return this.boxes;
   }
@@ -627,12 +664,12 @@ export class SessionLevelsPrimitive implements ISeriesPrimitive<Time> {
   }
 
   paneViews(): readonly IPrimitivePaneView[] {
-    return this.segments.length > 0 || this.boxes.length > 0 || this.tags.length > 0 || this.marks.length > 0 || this.marus.length > 0 ? this.paneViewsList : EMPTY_PANE_VIEWS;
+    return this.segments.length > 0 || this.boxes.length > 0 || this.tags.length > 0 || this.marks.length > 0 || this.marus.length > 0 || this.rangeBar ? this.paneViewsList : EMPTY_PANE_VIEWS;
   }
 
   autoscaleInfo(startTimePoint: Logical, endTimePoint: Logical): AutoscaleInfo | null {
     const visible = this.segments.filter((segment) =>
-      this.intersectsLogicalRange(segment, startTimePoint, endTimePoint),
+      !segment.noAutoscale && this.intersectsLogicalRange(segment, startTimePoint, endTimePoint),
     );
     if (visible.length === 0) return null;
     const prices = visible.map((segment) => segment.price);
