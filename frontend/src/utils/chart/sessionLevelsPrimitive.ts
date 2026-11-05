@@ -294,16 +294,16 @@ class SessionLevelsRenderer implements IPrimitivePaneRenderer {
         context.font = segment.compact ? COMPACT_FONT : LABEL_FONT;
         const maxLabelX = mediaSize.width - context.measureText(text).width - LABEL_GAP_PX;
         const labelX = Math.min(endX + LABEL_GAP_PX, maxLabelX);
-        return { ...drawable, text, labelX, labelY: drawable.y, lineEndX: Math.min(endX, labelX - LABEL_GAP_PX / 2) };
+        return { ...drawable, text, labelX, labelY: drawable.y, labelW: context.measureText(text).width, lineEndX: Math.min(endX, labelX - LABEL_GAP_PX / 2) };
       });
-      // Labels that end at the same place and would overlap are spread apart (lines stay put).
-      const stacked = placed.filter((p) => p.text).sort((a, b) => a.labelX - b.labelX || a.y - b.y);
-      for (let i = 0; i < stacked.length; i += 1) {
-        const column = stacked.filter((p) => Math.abs(p.labelX - stacked[i].labelX) < 30);
-        if (column[0] !== stacked[i]) continue;
-        column.sort((a, b) => a.y - b.y);
-        for (let k = 1; k < column.length; k += 1) {
-          if (column[k].labelY - column[k - 1].labelY < LABEL_MIN_GAP_PX) column[k].labelY = column[k - 1].labelY + LABEL_MIN_GAP_PX;
+      // Labels whose text would overlap are spread apart, top to bottom (lines stay put).
+      const order = placed.filter((p) => p.text).sort((a, b) => a.y - b.y);
+      for (let i = 0; i < order.length; i += 1) {
+        for (let j = 0; j < i; j += 1) {
+          const a = order[j];
+          const b = order[i];
+          const sideBySide = b.labelX < a.labelX + a.labelW + 4 && a.labelX < b.labelX + b.labelW + 4;
+          if (sideBySide && b.labelY - a.labelY < LABEL_MIN_GAP_PX) b.labelY = a.labelY + LABEL_MIN_GAP_PX;
         }
       }
 

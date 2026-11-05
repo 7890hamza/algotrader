@@ -140,7 +140,7 @@ export function buildSessionBoxes(
   const sorted = sortedPoints(points);
   const maxGap = barSeconds(sorted) * MAX_GAP_BARS;
   interface Edge { key: string; label?: string }
-  interface Group { edges: Edge[]; color: string; label: string; fillOpacity?: number; noLabels?: boolean; compact?: boolean; title?: string }
+  interface Group { edges: Edge[]; color: string; label: string; fillOpacity?: number; noLabels?: boolean; compact?: boolean; title?: string; joinGaps?: boolean }
   const groups = new Map<string, Group>();
   for (const [key, output] of Object.entries(outputs)) {
     if (output.type !== 'box' || typeof output.box !== 'string') continue;
@@ -153,6 +153,7 @@ export function buildSessionBoxes(
       noLabels: output.boxLabels === false ? true : undefined,
       compact: output.boxCompact === true ? true : undefined,
       title: typeof output.boxTitle === 'string' ? output.boxTitle : undefined,
+      joinGaps: output.joinGaps === true,
     };
     // Edges are "high"/"low" (fixed) or any two names (e.g. "near"/"far"), sorted by price per bar.
     group.edges.push({ key, label: typeof output.edgeLabel === 'string' ? output.edgeLabel : undefined });
@@ -177,7 +178,9 @@ export function buildSessionBoxes(
       const high = Math.max(va, vb);
       const low = Math.min(va, vb);
       // Running ranges only widen inside one session; a narrower range or a long gap starts a new box.
-      if (current && time - current.endTime <= maxGap && high >= current.high && low <= current.low) {
+      // joinGaps: a fixed box (a whole session's range) keeps going through small data gaps.
+      const sameFixed = group.joinGaps && current && current.high === high && current.low === low;
+      if (current && (sameFixed || (time - current.endTime <= maxGap && high >= current.high && low <= current.low))) {
         current.endTime = time;
         current.high = high;
         current.low = low;

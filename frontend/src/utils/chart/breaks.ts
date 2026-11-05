@@ -293,13 +293,28 @@ export function buildBreaksTags(points: readonly IndicatorDataPoint[], rates: Br
   return tags;
 }
 
-/** Past sessions keep their lines and Hit arrows without text; the running one gets small labels. */
-export function tidyBreakSegments<T extends { endTime: number; label: string; showPrice: boolean; labelColor: string; compact?: boolean; touchText?: string }>(
+/** Ids of each line's latest session ("prth_h@..." newest per output): those keep their text. */
+export function latestSegmentIds(segments: readonly { id: string; startTime: number }[]): Set<string> {
+  const newest = new Map<string, { id: string; startTime: number }>();
+  for (const s of segments) {
+    const key = s.id.split('@')[0];
+    const cur = newest.get(key);
+    if (!cur || s.startTime > cur.startTime) newest.set(key, s);
+  }
+  return new Set([...newest.values()].map((s) => s.id));
+}
+
+/**
+ * Past sessions keep their lines and Hit arrows without text; each line's latest session (still
+ * running, or finished today and waiting for the next one) gets small labels.
+ */
+export function tidyBreakSegments<T extends { id: string; startTime: number; endTime: number; label: string; showPrice: boolean; labelColor: string; compact?: boolean; touchText?: string }>(
   segments: readonly T[],
-  lastTime: number,
+  _lastTime: number,
 ): T[] {
+  const latest = latestSegmentIds(segments);
   return segments.map((s) =>
-    s.endTime === lastTime
+    latest.has(s.id)
       ? { ...s, compact: true, labelColor: '#9aa4b2' }
       : { ...s, label: '', showPrice: false, touchText: undefined },
   );

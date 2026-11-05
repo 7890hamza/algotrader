@@ -75,9 +75,9 @@ describe('Breaks chips', () => {
     expect(tag.lines.at(-1)).toBe('After the break, half of days reach 7,854.69, 1 in 4 reach 7,864.35');
   });
 
-  it('quiets past sessions and keeps small labels on the running one', () => {
-    const seg = { endTime: 10, label: 'pRTH High', showPrice: true, labelColor: '#fff', touchText: 'Hit' };
-    const [past, live] = tidyBreakSegments([seg, { ...seg, endTime: 20 }], 20);
+  it('quiets past sessions and keeps small labels on the latest one, even after it closed', () => {
+    const seg = { id: 'prth_h@0', startTime: 0, endTime: 10, label: 'pRTH High', showPrice: true, labelColor: '#fff', touchText: 'Hit' };
+    const [past, live] = tidyBreakSegments([seg, { ...seg, id: 'prth_h@15', startTime: 15, endTime: 20 }], 99);
     expect(past).toMatchObject({ label: '', showPrice: false, touchText: undefined });
     expect(live).toMatchObject({ label: 'pRTH High', compact: true });
   });

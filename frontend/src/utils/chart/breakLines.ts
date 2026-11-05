@@ -1,7 +1,7 @@
 import type { IndicatorDataPoint, JsonObject } from '@/types/contracts';
 
 import { formatClock, formatPrice, type SessionBox, type SessionTag } from './alnGuide';
-import { type BreakRates, buildBreaksTags, tidyBreakSegments } from './breaks';
+import { type BreakRates, buildBreaksTags, latestSegmentIds, tidyBreakSegments } from './breaks';
 import { buildRetrace, type RetraceLayer } from './retrace';
 import type { SessionLevelSegment } from './sessionLevels';
 
@@ -93,12 +93,12 @@ export function annotateBreakLines(
 ): SessionLevelSegment[] {
   const sorted = [...points].sort((a, b) => Number(a.timestamp_ms) - Number(b.timestamp_ms));
   if (!sorted.length) return [...segments];
-  const lastTime = Math.floor(Number(sorted[sorted.length - 1].timestamp_ms) / 1000);
   const byStart = new Map<string, SessionTag>();
   for (const t of tags) {
     if (t.id.startsWith('breaks-rth')) byStart.set(`rth@${t.startTime}`, t);
     else if (t.id.startsWith('breaks-eth')) byStart.set(`eth@${t.startTime}`, t);
   }
+  const latest = latestSegmentIds(segments);
   const runOf = (start: number, end: number): IndicatorDataPoint[] =>
     sorted.filter((p) => { const t = Math.floor(Number(p.timestamp_ms) / 1000); return t >= start && t <= end; });
   return segments.map((s) => {
@@ -115,7 +115,7 @@ export function annotateBreakLines(
       : ethNotes(run, rates, lastMinute + 5 >= 17 * 60 && lastMinute < 18 * 60);
     const hoverLines = [...(tag?.lines ?? [])];
     if (notes.extra) hoverLines.splice(Math.min(2, hoverLines.length), 0, ...notes.extra);
-    const live = s.endTime === lastTime;
+    const live = latest.has(s.id);
     const note = live ? (m[2] === 'h' ? notes.h : notes.l) : undefined;
     return { ...s, ...(note ? { note } : {}), ...(hoverLines.length ? { hoverLines } : {}) };
   });

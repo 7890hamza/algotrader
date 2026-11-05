@@ -49,7 +49,7 @@ class BreaksTests(unittest.TestCase):
         self.assertEqual(out[k + 20, COL["rth_hit_l"]], ms(2026, 10, 6, 9, 30) + 20 * 300_000)
         self.assertTrue(np.isnan(out[-1, COL["rth_hit_h"]]))
         self.assertEqual(out[0, COL["rth_box_h"]], 110)  # Monday is Tuesday's "yesterday": boxed
-        self.assertTrue(np.isnan(out[k, COL["rth_box_h"]]))  # today: no box
+        self.assertEqual(out[k, COL["rth_box_h"]], 102)  # today finished at 15:55: boxed too
         self.assertTrue(np.isnan(out[0, COL["prth_h"]]))  # no Friday before it
 
     def test_gap_up_turns_off_the_high_touch(self) -> None:

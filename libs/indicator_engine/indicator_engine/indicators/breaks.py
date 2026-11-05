@@ -16,8 +16,8 @@ RTH (on the RTH bars of each day that has a previous RTH session)
   ``rth_third``             inside days: +1 upper third, 0 middle, -1 lower third of pRTH
   ``rth_touch_h`` / ``_l``  1 when that line can be "hit" today (not already behind the open)
   ``rth_hit_h`` / ``_l``    epoch ms of the first hit, from that bar on
-  ``rth_box_h`` / ``_l``    the day's own RTH high / low, once a later RTH day exists (the
-                            faint "yesterday" box)
+  ``rth_box_h`` / ``_l``    the day's own RTH high / low once the session has finished (the
+                            see-through box that becomes the next day's pRTH)
 
 IB
   ``ib_box_h`` / ``_l``     running high / low during 09:30-10:30 (the IB box)
@@ -234,7 +234,8 @@ def breaks(
         sessions = _groups(day, rth_mask)
         for k, rows in enumerate(sessions):
             if "rth" in parts:
-                if k < len(sessions) - 1:
+                # A finished session gets its box (it is the next day's pRTH).
+                if k < len(sessions) - 1 or minute[rows[-1]] + bar_min >= RTH_END:
                     out[rows, COL["rth_box_h"]] = float(np.nanmax(high[rows]))
                     out[rows, COL["rth_box_l"]] = float(np.nanmin(low[rows]))
                 if k > 0:
@@ -278,7 +279,10 @@ def breaks(
         in_eth = (minute >= ETH_START) | (minute < ETH_END)
         eth_day = day + (minute >= ETH_START)
         sessions = [g for g in _groups(eth_day, in_eth & (((eth_day + 3) % 7) < 5))]
-        for k in range(len(sessions) - 1):  # every ETH day with a later one: its faint box
+        for k in range(len(sessions)):  # every finished ETH day: its faint box (the next pETH)
+            last_m = minute[sessions[k][-1]]
+            if k == len(sessions) - 1 and not (ETH_END - bar_min - 5 <= last_m < ETH_END):
+                continue
             out[sessions[k], COL["eth_box_h"]] = float(np.nanmax(high[sessions[k]]))
             out[sessions[k], COL["eth_box_l"]] = float(np.nanmin(low[sessions[k]]))
         for k in range(1, len(sessions)):

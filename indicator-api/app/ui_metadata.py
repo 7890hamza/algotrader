@@ -401,6 +401,7 @@ def _breaks_metadata() -> dict:
             out["touchWhen"] = {"key": when, "equals": 1}
         if not extend:
             out["extend"] = False
+        out["joinGaps"] = True  # one line per session even across small gaps in the data
         return out
 
     outputs: dict[str, dict] = {
@@ -417,10 +418,10 @@ def _breaks_metadata() -> dict:
     # Each session's own range as a see-through labeled box: the next day's pRTH / pETH.
     for key, edge in (("rth_box_h", "high"), ("rth_box_l", "low")):
         outputs[key] = {"type": "box", "box": "rth_day", "edge": edge, "label": "RTH", "boxTitle": "pRTH",
-                        "boxLabels": False, "plotOptions": {"color": blue, "fillOpacity": 0.13}}
+                        "boxLabels": False, "joinGaps": True, "plotOptions": {"color": blue, "fillOpacity": 0.13}}
     for key, edge in (("eth_box_h", "high"), ("eth_box_l", "low")):
         outputs[key] = {"type": "box", "box": "eth_day", "edge": edge, "label": "ETH", "boxTitle": "pETH",
-                        "boxLabels": False, "plotOptions": {"color": purple, "fillOpacity": 0.07}}
+                        "boxLabels": False, "joinGaps": True, "plotOptions": {"color": purple, "fillOpacity": 0.07}}
     for key, edge in (("ib_box_h", "high"), ("ib_box_l", "low")):
         outputs[key] = {"type": "box", "box": "ib", "edge": edge, "label": "IB", "boxCompact": True,
                         "plotOptions": {"color": blue, "fillOpacity": 0}}
