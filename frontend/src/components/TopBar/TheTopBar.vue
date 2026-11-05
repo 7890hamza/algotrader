@@ -35,6 +35,16 @@
         @click="toggleMode('short')"
       >Short</n-button>
       <n-button
+        size="small"
+        round
+        class="position-button position-button--retrace"
+        :class="{ 'position-button--active': isChartInteractionModeSelected('retrace') }"
+        data-testid="chart-mode-retrace"
+        title="Retrace: click the leg's start, then its end (snaps to the candle's high or low)"
+        :aria-pressed="isChartInteractionModeSelected('retrace')"
+        @click="toggleMode('retrace')"
+      >Retrace</n-button>
+      <n-button
         circle
         class="chart-interaction-mode-button"
         :class="{
@@ -188,6 +198,8 @@ function toggleMode(mode: ChartInteractionMode): void {
 .position-button--short { color: #e0574a; }
 .position-button--active.position-button--long { background: rgba(63, 185, 80, 0.2); }
 .position-button--active.position-button--short { background: rgba(224, 87, 74, 0.2); }
+.position-button--retrace { color: #e9c46a; }
+.position-button--active.position-button--retrace { background: rgba(233, 196, 106, 0.2); }
 
 .active-chart-note {
   align-self: center;

@@ -6,7 +6,7 @@
       class="chart-container"
       :class="{
         'chart-container--measure-mode': interactionMode === 'measure',
-        'chart-container--measure-mode chart-container--position-mode': interactionMode === 'long' || interactionMode === 'short',
+        'chart-container--measure-mode chart-container--position-mode': interactionMode === 'long' || interactionMode === 'short' || interactionMode === 'retrace',
       }"
     />
 
@@ -59,6 +59,13 @@
       @remove="positionTool?.remove()"
       @qty="(qty: number) => positionTool?.update({ qty })"
       @point-value="(value: number | null) => positionTool?.setCustomPointValue(value)"
+    />
+
+    <retrace-tool-card
+      v-if="rtSelected"
+      :drawing="rtSelected"
+      @remove="retraceTool?.removeSelected()"
+      @update="(patch: { from?: number; to?: number; lines?: string }) => retraceTool?.updateSelected(patch)"
     />
 
     <mt5-panel v-if="!isSecondPane" />
@@ -135,9 +142,12 @@ import TbrStatsOverlay from "@/components/Chart/TbrStatsOverlay.vue";
 import AmTbrGuideOverlay from "@/components/Chart/AmTbrGuideOverlay.vue";
 import { CloseCircleOutline } from "@/icons";
 import PositionToolCard from "@/components/Chart/PositionToolCard.vue";
+import RetraceToolCard from "@/components/Chart/RetraceToolCard.vue";
 import Mt5Panel from "@/components/Chart/Mt5Panel.vue";
 import { IS_SECOND_PANE } from "@/utils/chartPane";
 import { PositionToolController } from "@/utils/chart/positionToolController";
+import type { RetraceDrawing } from "@/utils/chart/retraceTool";
+import { RetraceToolController } from "@/utils/chart/retraceToolController";
 import type { PositionModel, PositionToolState } from "@/utils/chart/positionTool";
 import type { ContractSpec } from "@/utils/chart/contractSpecs";
 import { fetchBrokerSymbolSpec } from "@/api/brokerClient";
@@ -203,6 +213,8 @@ interface ChartAreaData {
   ptState: PositionToolState | null;
   ptModel: PositionModel | null;
   ptSpec: ContractSpec | null;
+  retraceTool: RetraceToolController | null;
+  rtSelected: RetraceDrawing | null;
 }
 
 function isOhlcLegendPoint(value: unknown): value is OhlcLegendPoint {
@@ -222,6 +234,7 @@ export default defineComponent({
     AmTbrGuideOverlay,
     CloseCircleOutline,
     PositionToolCard,
+    RetraceToolCard,
     Mt5Panel,
     Indicator,
     NButton,
@@ -273,6 +286,8 @@ export default defineComponent({
       ptState: null,
       ptModel: null,
       ptSpec: null,
+      retraceTool: null,
+      rtSelected: null,
     };
   },
 
@@ -394,6 +409,29 @@ export default defineComponent({
       onPlaced: () => this.$emit("placed"),
     }));
     this.positionTool.setMarket(this.currentMarketStore.symbol, this.currentMarketMinMove);
+    this.retraceTool = markRaw(new RetraceToolController({
+      getSeries: () => this.ohlcSeriesRef,
+      coordinateToPrice: (y) => this.chartInfrastructure.coordinateToCandlestickPrice(y),
+      coordinateToTime: (x) => {
+        const logical = this.chartInfrastructure.coordinateToLogical(x);
+        const bars = this.candlesticksStore.data;
+        if (logical === null || !bars.length) return null;
+        const i = Math.max(0, Math.min(bars.length - 1, Math.round(logical)));
+        return Math.floor(bars[i].timestamp_ms / 1000);
+      },
+      barAt: (time) => {
+        const bar = this.candlesticksStore.data.find((b) => Math.floor(b.timestamp_ms / 1000) === time);
+        return bar ? { high: Number(bar.high), low: Number(bar.low) } : null;
+      },
+      setDragScroll: (enabled) => {
+        this.chartInfrastructure.setMouseDragScrollEnabled(enabled && this.interactionMode !== 'measure');
+      },
+      onChange: (_drawings, selected) => {
+        this.rtSelected = selected ? { ...selected, a: { ...selected.a }, b: { ...selected.b }, lines: [...selected.lines] } : null;
+      },
+      onPlaced: () => this.$emit("placed"),
+    }));
+    this.retraceTool.setSymbol(this.currentMarketStore.symbol);
     this.chartSession = markRaw(createChartSession(this.createChartSessionAdapter()));
     this.syncChartSession();
   },
@@ -428,6 +466,7 @@ export default defineComponent({
     this.cancelMeasurementOverlay();
     this.setMeasurementPaneElement(null);
     this.positionTool?.destroy();
+    this.retraceTool?.destroy();
     const chartContainer = this.getChartContainer();
     if (chartContainer) {
       chartContainer.removeEventListener("wheel", this.onWheelPassive);
@@ -593,6 +632,7 @@ export default defineComponent({
     syncPositionToolMarket(): void {
       const symbol = this.currentMarketStore.symbol;
       this.positionTool?.setMarket(symbol, this.currentMarketMinMove);
+      this.retraceTool?.setSymbol(symbol);
       if (symbol) {
         void fetchBrokerSymbolSpec(symbol).then((spec) => this.positionTool?.setBrokerSpec(symbol, spec));
       }
@@ -602,6 +642,7 @@ export default defineComponent({
       this.chartInfrastructure.setMouseDragScrollEnabled(this.interactionMode !== 'measure');
       const mode = this.interactionMode;
       this.positionTool?.setPlacing(mode === 'long' || mode === 'short' ? mode : null);
+      this.retraceTool?.setPlacing(mode === 'retrace');
 
       if (this.interactionMode !== 'measure') {
         this.cancelMeasurementOverlay();
@@ -748,6 +789,8 @@ export default defineComponent({
       this.setMeasurementPaneElement(paneHtmlElement);
       this.positionTool?.setPane(paneHtmlElement);
       this.positionTool?.syncSeries();
+      this.retraceTool?.setPane(paneHtmlElement);
+      this.retraceTool?.syncSeries();
       this.backtestOverlayTarget = paneHtmlElement
         ? getOrCreatePaneOverlayWrapper(paneHtmlElement)
         : null;
