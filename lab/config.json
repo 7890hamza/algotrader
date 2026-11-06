@@ -1,0 +1,8 @@
+{
+  "cycle_minutes": 15,
+  "agents": ["researcher", "trader"],
+  "step_timeout_minutes": 10,
+  "nice": 10,
+  "feed_url": "http://database-accessor-api:8000",
+  "symbol": "ES"
+}

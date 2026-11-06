@@ -43,3 +43,21 @@ services:
       VITE_USE_POLLING: "true"
       # Contract sizes (tick value) for the risk-to-reward tool come from the MT5 bridge.
       VITE_PROXY_BROKER_TARGET: http://host.docker.internal:8050
+
+  lab:
+    # The Lab: the Researcher and Trader agents (lab/README.md). Capped so it never slows
+    # the charts or MT5: 1 CPU core, 1 GB, low priority. Comes back after a reboot.
+    container_name: lab
+    build:
+      context: .
+      dockerfile: lab/Dockerfile
+    volumes:
+      - ./lab:/lab
+    cpus: 1.0
+    mem_limit: 1g
+    cpu_shares: 256
+    restart: unless-stopped
+    depends_on:
+      database-accessor-api:
+        condition: service_healthy
+

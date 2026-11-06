@@ -10,3 +10,13 @@ __pycache__
 
 config/topology.local.yaml
 .venv-mt5
+
+# The Lab's runtime files (data, memory, results, logs) stay on your machine
+lab/data/es_m1/*.npz
+lab/agents/*/memory/*
+lab/agents/*/results/*
+lab/agents/*/PAUSE
+lab/arena/*
+lab/logs/*
+!lab/**/.gitkeep
+
