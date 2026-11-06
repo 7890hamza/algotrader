@@ -118,6 +118,9 @@ class BreaksTests(unittest.TestCase):
         self.assertEqual(out[12, COL["rt_end"]], 110)
         self.assertEqual(out[12, COL["rt_start_at"]], ms(2026, 10, 6, 9, 35))
         self.assertTrue(np.isnan(out[12, COL["rt_out_at"]]))  # touching bar is not the Out
+        self.assertEqual(out[12, COL["rt_in_at"]], ms(2026, 10, 6, 10, 30))  # the dip to 105 reached the zone: In
+        self.assertEqual(out[12, COL["rt_in_px"]], 106)  # the 40% line
+        self.assertTrue(np.isnan(out[11, COL["rt_in_at"]]))
         self.assertEqual(out[13, COL["rt_out_px"]], 106.5)
         self.assertEqual(out[13, COL["rt_res"]], 1)  # filled in once the new high came
         self.assertEqual(out[14, COL["rt_start"]], 105)

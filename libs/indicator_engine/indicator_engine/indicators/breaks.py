@@ -37,7 +37,8 @@ Retracement (RTH bars after the IB window; the IB is the first leg; see ``_retra
   ``rt_dir`` trend (+1 / -1), ``rt_start`` / ``rt_end`` the current leg (prices) and
   ``rt_start_at`` / ``rt_end_at`` (epoch ms), ``rt_zone`` the zone number, ``rt_out_at`` /
   ``rt_out_px`` where price came back out of the zone, ``rt_res`` +1 / -1 once that zone
-  settles, ``rt_flip_at`` the latest trend change (epoch ms).
+  settles, ``rt_flip_at`` the latest trend change (epoch ms), ``rt_in_at`` / ``rt_in_px`` when
+  price first reached the zone's 40% line (the "In") and that line's price.
 """
 
 from __future__ import annotations
@@ -71,7 +72,7 @@ OUTPUTS = [
     "peth_h", "peth_l", "eth_setup", "eth_third", "eth_touch_h", "eth_touch_l", "eth_hit_h", "eth_hit_l",
     "eth_box_h", "eth_box_l",
     "rt_dir", "rt_start", "rt_end", "rt_zone", "rt_start_at", "rt_end_at", "rt_out_at", "rt_out_px", "rt_res",
-    "rt_flip_at",
+    "rt_flip_at", "rt_in_at", "rt_in_px",
 ]
 COL = {name: i for i, name in enumerate(OUTPUTS)}
 
@@ -149,6 +150,8 @@ def _retrace(out, rows, ib_rows, post, high, low, open_, close, epoch_ms, tick) 
         out[r, c["rt_start"]], out[r, c["rt_end"]] = start, end
         out[r, c["rt_zone"]] = len(zones) - 1
         out[r, c["rt_start_at"]], out[r, c["rt_end_at"]] = epoch_ms[start_r], epoch_ms[end_r]
+        if z["touched"] is not None:
+            out[r, c["rt_in_at"]], out[r, c["rt_in_px"]] = epoch_ms[z["touched"]], z["in_px"]
         if z["out"] is not None:
             out[r, c["rt_out_at"]], out[r, c["rt_out_px"]] = epoch_ms[z["out"][0]], z["out"][1]
         out[r, c["rt_flip_at"]] = flip_at
@@ -188,6 +191,7 @@ def _retrace(out, rows, ib_rows, post, high, low, open_, close, epoch_ms, tick) 
             if not touched and (low[r] <= p40 if s == 1 else high[r] >= p40):
                 touched = True
                 z["touched"] = int(r)
+                z["in_px"] = float(p40)
             if touched and z["out"] is None and z["touched"] != r and (close[r] > p40 if s == 1 else close[r] < p40):
                 z["out"] = (int(r), float(close[r]))
         write(r)

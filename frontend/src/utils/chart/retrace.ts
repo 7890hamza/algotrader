@@ -6,7 +6,7 @@ import type { IndicatorDataPoint, JsonObject } from '@/types/contracts';
 import { formatClock, formatPrice, type SessionBox } from './alnGuide';
 import type { SessionLevelSegment } from './sessionLevels';
 
-/** Breaks' retracement layer: legs (zigzag), 40-60% zones, "Out" marks and trend changes. */
+/** Breaks' retracement layer: legs (zigzag), 40-60% zones, "In" / "Out" marks and trend changes. */
 export interface RetraceMark {
   time: number;
   price: number;
@@ -14,6 +14,8 @@ export interface RetraceMark {
   color: string;
   /** Circle around the point ("Out") or a plain label ("Trend change"). */
   circle: boolean;
+  /** A filled dot on the point ("In": price reached the zone). */
+  dot?: boolean;
   /** Text below (true) or above the point. */
   below: boolean;
 }
@@ -114,6 +116,8 @@ export function buildRetrace(points: readonly IndicatorDataPoint[], guide: JsonO
     const zoneEnd = Math.floor(Number(last.timestamp_ms) / 1000);
     const outAt = num(last, 'rt_out_at');
     const outPx = num(last, 'rt_out_px');
+    const inAt = num(last, 'rt_in_at');
+    const inPx = num(last, 'rt_in_px');
     const res = num(last, 'rt_res');
     const word = dir > 0 ? 'high' : 'low';
     const hover = [
@@ -121,6 +125,7 @@ export function buildRetrace(points: readonly IndicatorDataPoint[], guide: JsonO
         ? `IB leg: the IB ${dir > 0 ? 'low came first, then the high (an up leg)' : 'high came first, then the low (a down leg)'}`
         : `40–60% retracement zone (${dir > 0 ? 'uptrend' : 'downtrend'})`,
       `Leg ${formatPrice(start)} → ${formatPrice(end)} (${formatPrice(Math.abs(end - start))} pts): price usually rests ${formatPrice(Math.min(p40, p60))}–${formatPrice(Math.max(p40, p60))} before the next step.`,
+      inAt !== null && inPx !== null ? `In: reached the zone at ${clock(inAt)} (${formatPrice(inPx)}).` : 'In: price has not reached the zone yet.',
       outAt !== null && outPx !== null
         ? `Came back out at ${clock(outAt)} (${formatPrice(outPx)})${res === 1 ? ` and made a new ${word} ✓` : res === -1 ? ` but broke ${formatPrice(start)} first ✗` : ''}.`
         : 'Waiting for price to dip into the zone and come back out.',
@@ -152,6 +157,9 @@ export function buildRetrace(points: readonly IndicatorDataPoint[], guide: JsonO
     if (k === 0 || out.layer!.legs.length === 0) out.layer!.legs.push({ time: startAt, price: start });
     else if (out.layer!.legs[out.layer!.legs.length - 1].time !== startAt) out.layer!.legs.push({ time: startAt, price: start });
     out.layer!.legs.push({ time: endAt, price: end });
+    if (inAt !== null && inPx !== null) {
+      out.layer!.marks.push({ time: Math.floor(inAt / 1000), price: inPx, circle: false, dot: true, below: dir > 0, text: 'In', color });
+    }
     if (outAt !== null && outPx !== null) {
       out.layer!.marks.push({
         time: Math.floor(outAt / 1000), price: outPx, circle: true, below: dir > 0,
@@ -194,6 +202,12 @@ export class RetraceRenderer implements IPrimitivePaneRenderer {
       ctx.font = MARK_FONT;
       ctx.textAlign = 'center';
       for (const { mark, x, y } of this.d.marks) {
+        if (mark.dot) {
+          ctx.fillStyle = mark.color;
+          ctx.beginPath();
+          ctx.arc(x, y, 3.5, 0, Math.PI * 2);
+          ctx.fill();
+        }
         if (mark.circle) {
           ctx.strokeStyle = this.d.color;
           ctx.lineWidth = 1.5;

@@ -48,21 +48,23 @@ describe('Breaks lines', () => {
 });
 
 describe('Breaks retracement layer', () => {
-  it('builds zones, the live 40 / 60 / 100% lines, legs and Out marks', () => {
+  it('builds zones, the live 40 / 60 / 100% lines, legs and In / Out marks', () => {
     const base = { rt_dir: 1, rt_start: 100, rt_end: 120, rt_start_at: OPEN, rt_end_at: OPEN + 10 * M };
     const points: IndicatorDataPoint[] = [
       { timestamp_ms: OPEN + 10 * M, rt_zone: 0, ...base },
-      { timestamp_ms: OPEN + 20 * M, rt_zone: 0, ...base, rt_out_at: OPEN + 20 * M, rt_out_px: 112.5, rt_res: 1 },
+      { timestamp_ms: OPEN + 20 * M, rt_zone: 0, ...base, rt_in_at: OPEN + 15 * M, rt_in_px: 112, rt_out_at: OPEN + 20 * M, rt_out_px: 112.5, rt_res: 1 },
       { timestamp_ms: OPEN + 30 * M, rt_zone: 1, rt_dir: 1, rt_start: 110, rt_end: 125, rt_start_at: OPEN + 15 * M, rt_end_at: OPEN + 30 * M },
     ];
     const r = buildRetrace(points, { kind: 'breaks', retrace: { zone: [0.4, 0.6], up: '#0f0', down: '#f00', leg: '#ff0' } }, 'America/Los_Angeles');
     expect(r.boxes[0]).toMatchObject({ high: 120, low: 100, fillOpacity: 0.07 }); // the whole leg (grey)
     expect(r.boxes[1]).toMatchObject({ high: 112, low: 108, fillOpacity: 0.2 }); // its 40-60% band
     expect(r.boxes[0].hoverLines?.[0]).toContain('IB leg');
-    expect(r.boxes[1].hoverLines?.[2]).toContain('made a new high ✓');
+    expect(r.boxes[1].hoverLines?.[2]).toContain('In: reached the zone');
+    expect(r.boxes[1].hoverLines?.[3]).toContain('made a new high ✓');
     expect(r.segments.filter((s) => /^rt_(40|60)@/.test(s.id)).map((s) => s.label)).toEqual(['40%', '60%']);
     expect(r.layer?.legs.map((p) => p.price)).toEqual([100, 120, 110, 125]);
-    expect(r.layer?.marks[0]).toMatchObject({ text: 'Out ✓', price: 112.5 });
+    expect(r.layer?.marks[0]).toMatchObject({ text: 'In', price: 112, dot: true, below: true });
+    expect(r.layer?.marks[1]).toMatchObject({ text: 'Out ✓', price: 112.5 });
   });
 
   it('layoutBreaks keeps only the IB chip', () => {
