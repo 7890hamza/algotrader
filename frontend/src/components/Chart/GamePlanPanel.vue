@@ -150,8 +150,8 @@ const GamePlanRow = defineComponent({
 
 <style scoped>
 .gp {
-  width: 248px;
-  flex: 0 0 248px;
+  width: 320px;
+  flex: 0 0 320px;
   min-height: 0;
   overflow-y: auto;
   background: #131722;
