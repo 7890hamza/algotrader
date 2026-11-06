@@ -66,6 +66,8 @@ class GamePlanTests(unittest.TestCase):
         self.assertIn("ib_h", lv)
         self.assertLess(lv["ib_h"]["origUntil"], lv["ib_h"]["until"])
         self.assertEqual(plan["last"]["close"], 110.0)
+        self.assertEqual(plan["path"][-1][3], 110.0)  # 5-minute [t, high, low, close] for the mini chart
+        self.assertEqual(plan["path"][0][0] % 300_000, 0)
         sweeps = [x for x in plan["levels"] if x["kind"] == "hour_open" and not x["never"]]
         self.assertTrue(all(x["frm"] > int(x["id"].split("_")[1]) for x in sweeps))
 

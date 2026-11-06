@@ -55,6 +55,8 @@
         </template>
       </section>
 
+      <game-plan-mini-chart v-if="live" :plan="plan" :board="board" :t="live.t" :price="live.price" />
+
       <p class="gp-foot">ES 2016–2025 stats. Odds, never trade calls. ↻ = a session missed it and it carried over.</p>
     </template>
   </aside>
@@ -63,6 +65,7 @@
 <script setup lang="ts">
 import { computed, defineComponent, h, onBeforeUnmount, onMounted, ref, type PropType } from 'vue';
 
+import GamePlanMiniChart from '@/components/Chart/GamePlanMiniChart.vue';
 import { useCandlesticksStore } from '@/stores/candlesticksStore';
 import { useGamePlanStore } from '@/stores/gamePlanStore';
 import { buildBoard, type BoardRow } from '@/utils/chart/gamePlan';

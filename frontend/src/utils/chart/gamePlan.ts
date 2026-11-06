@@ -38,6 +38,8 @@ export interface DayPlan {
   sessions: Record<SessionKey, [number, number]>;
   levels: PlanLevel[];
   last: { t: number; close: number } | null;
+  /** The day's price per 5 minutes: [bucket start ms, high, low, close]. */
+  path?: number[][];
   ctx: {
     rth0: number;
     ib1: number;

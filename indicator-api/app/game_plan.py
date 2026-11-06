@@ -390,6 +390,20 @@ def _resolve(day: dict, bars: _Bars) -> None:
     del start
 
 
+def _path(bars: _Bars, start: int, end: int, step_ms: int = 300_000) -> list[list[float]]:
+    """The day's price as [bucket start ms, high, low, close] per 5 minutes (for the panel's mini chart)."""
+    i, j = bars.idx(start), bars.idx(end)
+    out: list[list[float]] = []
+    for k in range(i, j):
+        b = int(bars.t[k] // step_ms * step_ms)
+        if out and out[-1][0] == b:
+            r = out[-1]
+            r[1], r[2], r[3] = max(r[1], float(bars.h[k])), min(r[2], float(bars.l[k])), float(bars.c[k])
+        else:
+            out.append([b, float(bars.h[k]), float(bars.l[k]), float(bars.c[k])])
+    return out
+
+
 def _shell(d: date) -> dict:
     start, end = day_window(d)
     sessions = {}
@@ -444,6 +458,7 @@ def build_plan(m1_rows: np.ndarray, h1_rows: np.ndarray, d: date) -> dict:
         today["last"] = {"t": int(bars.t[li]), "close": float(bars.c[li])}
     else:
         today["last"] = None
+    today["path"] = _path(bars, today["start"], today["end"])
     for lv in today["levels"]:
         lv.pop("segs", None)
         lv.pop("rev", None)
