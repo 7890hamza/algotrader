@@ -190,3 +190,31 @@ class StreamConsumerTests(unittest.IsolatedAsyncioTestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class LiveGapTests(unittest.IsolatedAsyncioTestCase):
+    setUp = StreamConsumerTests.setUp
+    persist = StreamConsumerTests.persist
+
+    async def test_live_bar_after_a_silent_hole_requests_recovery(self):
+        from datetime import datetime
+
+        from zoneinfo import ZoneInfo
+
+        def ms(h, m):
+            pt = ZoneInfo("America/Los_Angeles")
+            return int(datetime(2026, 11, 9, h, m, tzinfo=pt).timestamp() * 1000)
+            return int(datetime(2026, 11, 9, h, m, tzinfo=pt).timestamp() * 1000)
+
+        state = SymbolRuntimeState(1, "ES", "CME", "candles:1:ES:M1")
+        state.live_boundary_ms = ms(10, 22)
+        state.live_ready.set()
+        self.service._state_by_id = {1: state}
+        self.service.request_recovery = AsyncMock()
+        bar = {"t": ms(13, 49), "o": 1.0, "h": 1.0, "l": 1.0, "c": 1.0, "v": 1}
+        await self.service.write_candles_callback(1, [bar])
+        self.service.request_recovery.assert_awaited_once_with(state, "live-gap", ms(10, 22))
+        # the next minute is contiguous: no new request
+        bar2 = dict(bar, t=ms(13, 50))
+        await self.service.write_candles_callback(1, [bar2])
+        self.assertEqual(self.service.request_recovery.await_count, 1)

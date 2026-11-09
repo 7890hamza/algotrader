@@ -37,8 +37,24 @@ def cme_closed(timestamp_ms: int) -> bool:
     return h == 16  # daily break
 
 
-def drop_closed_bars(symbol: str, candles: list[dict], symbols: frozenset[str] | None = None) -> list[dict]:
+def drop_closed_bars(
+    symbol: str, candles: list[dict], symbols: frozenset[str] | None = None
+) -> list[dict]:
     """Remove bars stamped while the market was closed (only for CME session symbols)."""
     if symbol.upper() not in (symbols if symbols is not None else cme_symbols()):
         return candles
     return [c for c in candles if not cme_closed(int(c["timestamp_ms"]))]
+
+
+def open_minutes_between(
+    symbol: str, after_ms: int, before_ms: int, symbols: frozenset[str] | None = None
+) -> int:
+    """How many trading minutes lie strictly between two bar times (capped at 3 days of
+    minutes). Symbols without known session hours return 0: their gaps can be real."""
+    first, last = after_ms + 60_000, before_ms - 60_000
+    if last < first:
+        return 0
+    span = min((last - first) // 60_000 + 1, 3 * 1440)
+    if symbol.upper() not in (symbols if symbols is not None else cme_symbols()):
+        return 0
+    return sum(1 for k in range(int(span)) if not cme_closed(first + k * 60_000))

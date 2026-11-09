@@ -10,7 +10,12 @@ from app.broker_client import BrokerClient
 from app.config import load_config
 from app.db_client import DatabaseClient
 from app.logger import setup_logging
-from app.market_hours import drop_closed_bars
+from app.market_hours import (
+    cme_closed,
+    cme_symbols,
+    drop_closed_bars,
+    open_minutes_between,
+)
 from app.stream_consumer import StreamConsumer
 from redis.asyncio import Redis
 
@@ -30,6 +35,7 @@ class SymbolRuntimeState:
     handoff_start_ms: int | None = None
     continuity: str | None = None
     live_boundary_ms: int | None = None
+    last_stall_kick_ms: int = 0
 
 
 class IngestionService:
@@ -256,7 +262,8 @@ class IngestionService:
         kept = drop_closed_bars(symbol, candles)
         if len(kept) != len(candles):
             self.logger.info(
-                f"Skipped {len(candles) - len(kept)} {symbol} bars stamped while the market was closed"
+                f"Skipped {len(candles) - len(kept)} {symbol} bars stamped while the market "
+                "was closed"
             )
         candles = kept
         if not candles:
@@ -323,6 +330,20 @@ class IngestionService:
                 min(state.handoff_start_ms, min(int(candle["t"]) for candle in candles)),
                 establish_handoff=False,
             )
+        # A live bar that skips trading minutes means the stream went quiet without a
+        # disconnect: protect the hole so recovery fetches it from the broker.
+        first_ms = min(candle["timestamp_ms"] for candle in mapped_candles)
+        if (
+            state.live_boundary_ms is not None
+            and open_minutes_between(state.symbol, state.live_boundary_ms, first_ms) >= 2
+        ):
+            self.logger.warning(
+                "Live gap market=%s after=%s before=%s, recovering",
+                state.symbol,
+                self._ms_to_iso(state.live_boundary_ms),
+                self._ms_to_iso(first_ms),
+            )
+            await self.request_recovery(state, "live-gap", state.live_boundary_ms)
         while not self._shutdown:
             await state.live_ready.wait()
             async with state.protection_lock:
@@ -636,6 +657,35 @@ class IngestionService:
     def _trigger_recovery(self) -> None:
         self._recovery_task = self._own_task(self._run_recovery())
 
+    STALL_MS = 3 * 60_000
+    STALL_RETRY_MS = 5 * 60_000
+
+    def _kick_stalled_streams(self) -> None:
+        """A session-market stream that has been silent for 3 minutes while the market is open
+        is resubscribed and its gap recovered (the broker can stall while reporting healthy)."""
+        now = self._utc_now_ms()
+        minute = now // 60_000 * 60_000
+        cme = cme_symbols()
+        for state in self.runtime_states:
+            if state.symbol.upper() not in cme or state.live_boundary_ms is None:
+                continue
+            if not state.live_ready.is_set():
+                continue
+            if now - state.last_stall_kick_ms < self.STALL_RETRY_MS:
+                continue
+            # the latest closed minute must be a trading minute, and enough of them missing
+            if cme_closed(minute - 60_000) or open_minutes_between(
+                state.symbol, state.live_boundary_ms, minute
+            ) < self.STALL_MS // 60_000:
+                continue
+            state.last_stall_kick_ms = now
+            self.logger.warning(
+                "Live stream stalled market=%s last=%s, resubscribing and recovering",
+                state.symbol,
+                self._ms_to_iso(state.live_boundary_ms),
+            )
+            self._own_task(self._recover_symbol_after_reconnect(state))
+
     async def _monitor_broker_connectivity(self) -> None:
         """Monitor broker/cTrader connectivity and trigger recovery on reconnect transitions."""
         poll_seconds = max(1, self.config.broker_health_poll_seconds)
@@ -658,6 +708,8 @@ class IngestionService:
                 self._broker_connected = connected
             else:
                 self._broker_connected = connected
+            if connected:
+                self._kick_stalled_streams()
 
             await asyncio.sleep(poll_seconds)
 
