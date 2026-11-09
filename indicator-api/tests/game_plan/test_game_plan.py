@@ -97,3 +97,26 @@ class RouteRowsTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class AllIndicatorsTests(unittest.TestCase):
+    def test_every_indicator_prints_on_the_plan(self) -> None:
+        # Five weeks of a gentle zig-zag (so the TBR SDEVs exist), then Wednesday trends up.
+        def path(t):
+            k = t // 60_000
+            base = 100 + 2 * np.sin(k / 37.0) + (k % 1440) / 1440.0
+            if t >= ms(2026, 11, 4, 6, 30):
+                base += min(10.0, (t - ms(2026, 11, 4, 6, 30)) / 60_000 * 0.05)
+            return base, base + 0.5, base - 0.5, base + 0.25
+        m1 = minute_bars(ms(2026, 9, 27, 15), ms(2026, 11, 4, 14), path)
+        h1 = hourly(m1)
+        plan = build_plan(m1, h1, date(2026, 11, 4), h1_long=h1)
+        groups = {lv["group"] for lv in plan["levels"]}
+        for g in ("AMTB", "TBR", "MTF D", "Opens", "ALN", "IB retrace", "SDEV", "Hour", "IB"):
+            self.assertIn(g, groups)
+        self.assertIn(plan["ctx"]["aln"]["pattern"], (1, 2, 3, 4))
+        # TBR lines stay in their own session: never carried to the end of the day
+        am = next(lv for lv in plan["levels"] if lv["id"] == "tbr_am_+0.25")
+        self.assertEqual(am["until"], ms(2026, 11, 4, 9))
+        self.assertNotIn("carry", am)
+        json.dumps(plan)

@@ -20,6 +20,10 @@
         </span>
       </section>
 
+      <p v-if="plan.ctx.aln" class="gp-dim gp-aln" data-testid="game-plan-aln">
+        <span class="gp-aln-tag">P{{ plan.ctx.aln.pattern }}</span> {{ plan.ctx.aln.text }}
+      </p>
+
       <p class="gp-watch" data-testid="game-plan-watch">{{ board.watch }}</p>
 
       <section class="gp-list">
@@ -32,6 +36,17 @@
           <game-plan-row :row="r" :open="openId === r.level.id" @toggle="toggleRow(r.level.id)" />
         </template>
         <p v-if="!board.above.length && !board.below.length" class="gp-dim">No open targets near price.</p>
+      </section>
+
+      <section v-if="board.allOpen.length" class="gp-done">
+        <button class="gp-label gp-done-toggle" type="button" :aria-expanded="showAll" data-testid="game-plan-all" @click="showAll = !showAll">
+          {{ showAll ? '▾' : '▸' }} All open targets ({{ board.allOpen.length }})
+        </button>
+        <template v-if="showAll">
+          <template v-for="r in board.allOpen" :key="`all-${r.level.id}`">
+            <game-plan-row :row="r" :open="openId === `all-${r.level.id}`" @toggle="toggleRow(`all-${r.level.id}`)" />
+          </template>
+        </template>
       </section>
 
       <section v-if="board.tally.length" class="gp-tally">
@@ -77,6 +92,7 @@ const candles = useCandlesticksStore();
 const plan = computed(() => store.plan);
 const openId = ref<string | null>(null);
 const showDone = ref(false);
+const showAll = ref(false);
 
 // The candle store updates in place, so read its last bar on a short tick.
 const tick = ref(0);
@@ -207,6 +223,8 @@ const GamePlanRow = defineComponent({
 .gp-tally-row { display: flex; justify-content: space-between; padding: 2px 0; }
 .gp-tally-row--live { color: #e9c46a; }
 .gp-live-dot { display: inline-block; width: 6px; height: 6px; border-radius: 50%; background: #e9c46a; margin-left: 6px; vertical-align: middle; }
+.gp-aln { margin: 0; font-size: 11px; }
+.gp-aln-tag { color: #5b7cfa; font-weight: 600; margin-right: 4px; }
 .gp-done-toggle { all: unset; cursor: pointer; color: #5d6474; font-size: 11px; }
 .gp-done-row { display: grid; grid-template-columns: 12px minmax(0, 1fr) auto; gap: 6px; padding: 2px 0; }
 .gp-done-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

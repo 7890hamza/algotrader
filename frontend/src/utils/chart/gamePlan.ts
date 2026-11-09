@@ -55,6 +55,8 @@ export interface DayPlan {
     rthHigh?: number;
     rthLow?: number;
     ethOver: { other_held: number; one_by_close: number };
+    /** ALN pattern at 5 AM: 1-4 and what London did with Asia's range. */
+    aln?: { pattern: number; text: string };
   };
 }
 
@@ -124,6 +126,8 @@ export interface Board {
   above: BoardRow[];
   below: BoardRow[];
   done: BoardRow[];
+  /** Every open target, highest first (the panel's "all open" list). */
+  allOpen: BoardRow[];
   tally: SessionTally[];
 }
 
@@ -147,6 +151,7 @@ export function buildBoard(plan: DayPlan, t: number, price: number, opts: { rows
     .filter((l) => isBoardTarget(l) && levelStatus(l, t) === 'done')
     .sort((a, b) => (b.hitAt ?? 0) - (a.hitAt ?? 0))
     .map(row);
+  const allOpen = open.filter((l) => l.kind === 'target').sort((a, b) => b.price - a.price).map(row);
 
   // Day type from the RTH range so far: under 40 range-day size, 40-60 either way, over 60 trend.
   let dayType: Board['dayType'] = null;
@@ -185,7 +190,7 @@ export function buildBoard(plan: DayPlan, t: number, price: number, opts: { rows
     tally.push({ key, name: SESSION_NAMES[key], hit, missed, live: live || b > t + MINUTE });
   }
 
-  return { dayType, move, rangeSoFar, adrMultiple, watch: watchLine(plan, t, price, above, below), above, below, done, tally };
+  return { dayType, move, rangeSoFar, adrMultiple, watch: watchLine(plan, t, price, above, below), above, below, done, allOpen, tally };
 }
 
 /** One plain sentence: the strongest nearby open target, or what is about to matter. */

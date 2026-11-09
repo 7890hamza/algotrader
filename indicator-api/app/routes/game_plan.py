@@ -25,9 +25,12 @@ def _rows(df) -> np.ndarray:
 
 def _plan(symbol: str, exchange: Optional[str], d: date) -> dict:
     start, end = day_window(d)
-    m1 = _fetch_candles_sync(symbol, "M1", start - 6 * 86_400_000, end, None, exchange)
-    h1 = _fetch_candles_sync(symbol, "H1", start - 50 * 86_400_000, end, None, exchange)
-    plan = build_plan(_rows(m1), _rows(h1), d)
+    # 5 weeks of minutes: the TBR lines need 20 earlier sessions; 14 months of hours: the monthly SDEV
+    m1 = _fetch_candles_sync(symbol, "M1", start - 36 * 86_400_000, end, None, exchange)
+    h1 = _fetch_candles_sync(symbol, "H1", start - 430 * 86_400_000, end, None, exchange)
+    h1_rows = _rows(h1)
+    recent = h1_rows[h1_rows[:, 0] >= start - 50 * 86_400_000] if len(h1_rows) else h1_rows
+    plan = build_plan(_rows(m1), recent, d, h1_long=h1_rows)
     plan["symbol"] = symbol
     return plan
 

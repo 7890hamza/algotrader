@@ -8,6 +8,15 @@ York). Targets come from the indicators already on the chart, with their ES 2016
 * Week         last week's high / low
 * SDEV         each ALN session's open and its +/-0.5 and +/-1 SDEV bands
 * Hour         each hour's prior-hour high / low, and "back to the open" after a sweep
+* AMTB         AM TBR: TBR open +/-0.25 SDEV; after the touch, back to the open, the stretch and
+               no-return zones; after the return, the follow-through
+* TBR          the same open fade for the CME, Asia, London, NY PM and NY sessions (ALN TBR)
+* MTF SDEV     the day's, week's and month's +/-0.5 / 1 / 1.5 SDEV bands
+* Opens        back to the day (Globex) open from 6:30 and to the RTH open from 7:30 (Current Day OHL)
+* ALN          Asia and London highs / lows, with the London break odds for the pattern (ALN Sessions)
+* IB retrace   the 40% ("In") and 60% lines of the current leg and its start (Breaks)
+
+TBR and IB retrace lines belong to their own session: they don't carry over.
 
 Carry-over: a target its own session misses stays open for the rest of the day (``origUntil``
 is where its odds stop applying, ``until`` the end of the day). Whatever the whole previous day
@@ -22,13 +31,20 @@ from datetime import date, datetime, timedelta, timezone
 from typing import Any
 
 import numpy as np
+from indicator_engine.indicators.aln_sessions import _pattern
+from indicator_engine.indicators.aln_tbr import F as TF
+from indicator_engine.indicators.aln_tbr import session_fade
+from indicator_engine.indicators.am_tbr import COL as AC
+from indicator_engine.indicators.am_tbr import am_tbr
 from indicator_engine.indicators.breaks import COL as BC
 from indicator_engine.indicators.breaks import breaks
 from indicator_engine.indicators.hour_stats import COL as HC
 from indicator_engine.indicators.hour_stats import hour_stats
+from indicator_engine.indicators.mtf_sdev import COL as MC
+from indicator_engine.indicators.mtf_sdev import mtf_sdev
 from zoneinfo import ZoneInfo
 
-from app.ui_metadata import BREAK_RATES, HOUR_RATES, HOUR_SLICES
+from app.ui_metadata import ALN_STATS, BREAK_RATES, HOUR_RATES, HOUR_SLICES, TBR_RATES
 
 PT = ZoneInfo("America/Los_Angeles")
 NY = ZoneInfo("America/New_York")
@@ -42,7 +58,46 @@ SDEV_HITS: dict[str, dict[str, list[float]]] = {
     "ldn": {"0.5": [59.1, 56.6], "1": [30.9, 30.8]},
     "am": {"0.5": [56.0, 58.1], "1": [28.6, 31.2]},
     "pm": {"0.5": [57.8, 53.3], "1": [28.0, 29.5]},
+    "cme": {"0.5": [52.6, 52.1], "1": [26.3, 26.9]},  # CME Open SDEV, 3-7 PM
 }
+
+# Open fade (AM TBR / ALN TBR), ES 2016-2025 1-minute: how often each +/-0.25 line is reached
+# [up, down]; of touched sessions, the share reaching each zone line and how many of those
+# still came back to the open; the share coming back overall.
+TBR_ODDS: dict[str, dict] = {
+    "cme": {"line": [75.7, 74.7], "back": 73.3, "s_med": 60.1, "s_p75": 38.4, "s_p90": 22.9,
+            "r_med": [18.1, 26.2], "r_p75": [7.8, 14.6], "not_r": 83.8},
+    "asia": {"line": [75.4, 73.7], "back": 75.6, "s_med": 61.2, "s_p75": 41.1, "s_p90": 24.7,
+             "r_med": [15.4, 21.0], "r_p75": [6.8, 10.5], "not_r": 85.6},
+    "ldn": {"line": [78.7, 76.4], "back": 77.4, "s_med": 60.5, "s_p75": 40.3, "s_p90": 25.4,
+            "r_med": [13.7, 17.3], "r_p75": [6.2, 9.3], "not_r": 87.0},
+    "am": {"line": [76.0, 77.1], "back": 75.8, "s_med": 60.6, "s_p75": 40.4, "s_p90": 24.9,
+           "r_med": [15.0, 18.7], "r_p75": [6.9, 13.1], "not_r": 85.8},
+    "pm": {"line": [78.9, 73.8], "back": 75.0, "s_med": 61.5, "s_p75": 40.6, "s_p90": 24.5,
+           "r_med": [15.8, 20.4], "r_p75": [6.9, 9.2], "not_r": 85.0},
+    "ny": {"line": [76.2, 76.3], "back": 74.4, "s_med": 62.1, "s_p75": 42.3, "s_p90": 27.7,
+           "r_med": [15.1, 14.6], "r_p75": [7.0, 8.4], "not_r": 85.1},
+}
+# key: (name, start hour PT, end hour PT, day offset, color)
+TBR_SESSIONS: dict[str, tuple[str, int, int, int, str]] = {
+    "cme": ("CME", 15, 17, -1, "#A78BFA"),
+    "asia": ("Asia", 17, 23, -1, "#E0574A"),
+    "ldn": ("London", 23, 29, -1, "#5B7CFA"),
+    "am": ("AMTB", 5, 9, 0, "#3FB950"),
+    "pm": ("NY PM", 9, 13, 0, "#26A69A"),
+    "ny": ("NY", 5, 13, 0, "#2E9E57"),
+}
+# MTF SDEV: how often the day / week / month reaches each band, [up %, down %].
+MTF_HITS: dict[str, dict[str, list[float]]] = {
+    "d": {"0.5": [59.8, 55.1], "1": [29.8, 29.7], "1.5": [14.5, 16.6]},
+    "w": {"0.5": [58.8, 52.1], "1": [27.7, 28.7], "1.5": [12.1, 16.0]},
+    "m": {"0.5": [70.9, 55.6], "1": [39.3, 30.8], "1.5": [21.4, 17.9]},
+}
+MTF_NAMES = {"d": "Day", "w": "Week", "m": "Month"}
+# Back to the open: the day (Globex) open from 6:30 to 1 PM, the RTH open from 7:30 to 1 PM.
+OPEN_BACK = {"day": 58.4, "rth": 59.7}
+ALN_TEXT = {1: "London took both Asia's high and low", 2: "London stayed inside Asia's range",
+            3: "London took Asia's high only", 4: "London took Asia's low only"}
 
 # key: (name, start hour PT, end hour PT, start day offset from the trading day)
 SESSIONS: dict[str, tuple[str, int, int, int]] = {
@@ -57,7 +112,9 @@ SDEV_WINDOWS: dict[str, tuple[int, int, int]] = {
     "ldn": (23, 29, -1),
     "am": (5, 9, 0),
     "pm": (9, 13, 0),
+    "cme": (15, 19, -1),
 }
+SDEV_NAMES = {"asia": "Asia", "ldn": "London", "am": "NY AM", "pm": "NY PM", "cme": "CME"}
 THIRD = {1: "upper", 0: "middle", -1: "lower"}
 
 COLORS = {
@@ -69,6 +126,14 @@ COLORS = {
     "up": "#3FB950",
     "down": "#E0574A",
     "hour": "#8A919C",
+    "stretch": "#3FB950",
+    "runaway": "#E0574A",
+    "follow": "#E9C46A",
+    "d": "#4B9A82",
+    "w": "#D9A441",
+    "m": "#C77DFF",
+    "asia": "#E0574A",
+    "london": "#5B7CFA",
 }
 
 
@@ -204,7 +269,8 @@ def _missed_sessions(lv: dict, sessions: dict[str, list[int]]) -> list[str]:
 
 # ----------------------------------------------------------------------------- one day
 def _day_levels(d: date, bars: _Bars, BR: np.ndarray, HS: np.ndarray, h1: _Bars,
-                days: dict[date, list[float]]) -> dict:
+                days: dict[date, list[float]], X: dict | None = None) -> dict:
+    X = X or {}
     start, end = day_window(d)
     rth0, ib1, rth1 = _pt(d, 6, 30), _pt(d, 7, 30), _pt(d, 13)
     i0 = bars.idx(start)
@@ -306,7 +372,7 @@ def _day_levels(d: date, bars: _Bars, BR: np.ndarray, HS: np.ndarray, h1: _Bars,
         if j >= len(bars) or bars.t[j] >= b:
             continue
         sd = _sdev(h1, days, d, key)
-        name = SESSIONS[key][0]
+        name = SDEV_NAMES[key]
         op = float(bars.o[j])
         add(id=f"{key}_open", group="SDEV", label=f"{name} open", price=op, frm=a, until=b, kind="open",
             color=COLORS["open"], why=f"{name} session open: the session's SDEV bands hang from it")
@@ -342,6 +408,134 @@ def _day_levels(d: date, bars: _Bars, BR: np.ndarray, HS: np.ndarray, h1: _Bars,
         add(id=f"ho_{a}", group="Hour", label=f"Back to {lab} open", price=HS[i, HC["open"]], frm=a,
             until=a + HOUR_MS, hour=True, kind="hour_open", segs=rates.get("segs"), rev=rates.get("rev"), color=COLORS["open"])
 
+    # Opens (Current Day OHL): back to the day (Globex) open from 6:30, to the RTH open from 7:30
+    if bars.idx(rth0) < len(bars) and bars.t[bars.idx(rth0)] < rth1:
+        add(id="day_open", group="Opens", label="Back to day open", price=bars.o[i0], frm=rth0, until=rth1,
+            odds=OPEN_BACK["day"], touch=True, carry=False, color=COLORS["open"],
+            why=f"Globex open (3 PM). RTH trades back to it {OPEN_BACK['day']}% of days")
+        r0 = bars.idx(rth0)
+        if bars.idx(ib1) < len(bars) and bars.t[bars.idx(ib1)] < rth1:
+            add(id="rth_open", group="Opens", label="Back to RTH open", price=bars.o[r0], frm=ib1, until=rth1,
+                odds=OPEN_BACK["rth"], touch=True, carry=False, color=COLORS["open"],
+                why=f"6:30 open. After the IB, price comes back to it {OPEN_BACK['rth']}% of days")
+
+    # ALN sessions: Asia and London ranges; at 5 AM the pattern sets the London break odds
+    asia_a, asia_b = _pt(d, 17, day_offset=-1), _pt(d, 23, day_offset=-1)
+    ldn_b = _pt(d, 5)
+    ia, ib_ = bars.idx(asia_a), bars.idx(asia_b)
+    il = bars.idx(ldn_b)
+    if ib_ - ia > 60 and ib_ < len(bars):
+        ah, al = float(bars.h[ia:ib_].max()), float(bars.l[ia:ib_].min())
+        for key, label, p in (("h", "high", ah), ("l", "low", al)):
+            add(id=f"asia_{key}", group="ALN", label=f"Asia {label}", price=p, frm=asia_b, until=end,
+                color=COLORS["asia"], why=f"Asia range {label} (5-11 PM)")
+        if il - ib_ > 60 and il < len(bars):
+            lh, ll = float(bars.h[ib_:il].max()), float(bars.l[ib_:il].min())
+            pat = _pattern(ah, al, lh, ll)
+            stats = ALN_STATS[f"P{pat}"]
+            ctx["aln"] = {"pattern": pat, "text": ALN_TEXT[pat]}
+            for key, label, p in (("h", "high", lh), ("l", "low", ll)):
+                odds = stats[label]
+                add(id=f"ldn_{key}", group="ALN", label=f"London {label}", price=p, frm=ldn_b, until=_pt(d, 13),
+                    odds=odds, color=COLORS["london"],
+                    why=f"P{pat}: {ALN_TEXT[pat]}. NY takes London's {label} {odds}% of days")
+
+    # MTF SDEV: the day's, week's and month's bands
+    k = X["h1L"].idx(start) if X.get("h1L") is not None else 0
+    MT = X.get("MT")
+    if MT is not None and k < len(MT):
+        for tf in ("d", "w", "m"):
+            op = _fin(MT[k, MC[f"{tf}_open"]])
+            if op is None:
+                continue
+            name = MTF_NAMES[tf]
+            # hourly bars of this week / month before today (bands already hit there are done)
+            col = MT[:, MC[f"{tf}_open"]]
+            k0 = k
+            while k0 > 0 and col[k0 - 1] == op:
+                k0 -= 1
+            hl_ = X["h1L"]
+            ph = float(hl_.h[k0:k].max()) if k > k0 else -np.inf
+            pl = float(hl_.l[k0:k].min()) if k > k0 else np.inf
+            for m_ in (0.5, 1.0, 1.5):
+                for sgn, side_i in ((1, 0), (-1, 1)):
+                    mark = "+" if sgn > 0 else "-"
+                    odds = MTF_HITS[tf][f"{m_:g}"][side_i]
+                    band = float(MT[k, MC[f"{tf}_{mark}{m_:g}"]])
+                    if (sgn > 0 and ph >= band + TICK) or (sgn < 0 and pl <= band - TICK):
+                        continue
+                    add(id=f"mtf_{tf}_{'u' if sgn > 0 else 'd'}{m_:g}", group=f"MTF {tf.upper()}",
+                        label=f"{name} {mark}{m_:g} SD", price=round(MT[k, MC[f'{tf}_{mark}{m_:g}']] * 4) / 4,
+                        frm=start, until=end, odds=odds, color=COLORS[tf],
+                        why=f"The {name.lower()} reaches its {mark}{m_:g} SD band {odds}% of the time")
+
+    # IB retrace (Breaks): the current leg's 40% ("In") and 60% lines and its start
+    last = min(last_i, bars.idx(rth1) - 1)
+    if last >= bars.idx(ib1) and _fin(BR[last, BC["rt_dir"]]) is not None:
+        dr, s0, e0 = (float(BR[last, BC[c_]]) for c_ in ("rt_dir", "rt_start", "rt_end"))
+        at = int(BR[last, BC["rt_end_at"]]) + 60_000
+        leg = abs(e0 - s0)
+        word = "up" if dr > 0 else "down"
+        for key, frac, label, why in (
+            ("40", 0.4, "IB pullback 40% (In)", f"Pullback into the {word} leg's 40-60% zone. After the first Out a new extreme came first 69% of the time"),
+            ("60", 0.6, "IB pullback 60%", "Bottom of the pullback zone"),
+            ("100", 1.0, "IB leg start (flip)", "Past the leg's start the trend flips"),
+        ):
+            add(id=f"rt_{key}", group="IB retrace", label=label, price=round((e0 - dr * frac * leg) * 4) / 4,
+                frm=at, until=rth1, touch=key != "100", carry=False, color=COLORS["ib"], why=why)
+
+    # TBR open fade: AMTB and the ALN TBR sessions
+    for key, (name, a_h, b_h, off, color) in TBR_SESSIONS.items():
+        a, b = _pt(d, a_h, day_offset=off), _pt(d, b_h, day_offset=off)
+        out = X.get("AM") if key == "am" else X.get("TB", {}).get(key)
+        if out is None:
+            continue
+        cols = AC if key == "am" else {**{f: TF[f] for f in TF}, "+0.25": TF["up"], "-0.25": TF["dn"], "touch_side": TF["side"]}
+        i, j = bars.idx(a), min(bars.idx(b), last_i + 1)
+        if i >= j or _fin(out[j - 1, cols["open"]]) is None:
+            continue
+        r = j - 1
+        o = float(out[r, cols["open"]])
+        st_ = TBR_ODDS[key]
+        grp = "AMTB" if key == "am" else "TBR"
+        tag = name if key == "am" else f"{name} TBR"
+        if key != "ny":  # NY shares the 8:00 open with AMTB
+            add(id=f"tbr_{key}_open", group=grp, label=f"{tag} open", price=o, frm=a, until=b, kind="open",
+                carry=False, color=COLORS["open"], why=f"{tag} open")
+        for sgn, side_i, col in ((1, 0, "+0.25"), (-1, 1, "-0.25")):
+            add(id=f"tbr_{key}_{col}", group=grp, label=f"{tag} {col}", price=out[r, cols[col]], frm=a, until=b,
+                odds=st_["line"][side_i], carry=False, color=color,
+                why=f"{tag} {col} SDEV line: reached {st_['line'][side_i]}% of sessions")
+        side = _fin(out[r, cols["touch_side"]])
+        if side is None:
+            continue
+        t_at = int(out[r, cols["touch_at"]])
+        hr = min((t_at - a) // HOUR_MS, 7)
+        rate = TBR_RATES.get(key, {}).get(f"{int(side)},{hr}")
+        back = rate[0] if rate else st_["back"]
+        add(id=f"tbr_{key}_back", group=grp, label=f"{tag} back to open", price=o, frm=t_at + 60_000, until=b,
+            odds=back, touch=True, carry=False, color=COLORS["open"],
+            why=f"Touched the {'+' if side > 0 else '-'}0.25 line; {back}% of these sessions come back to the open")
+        for zone, ends in (("stretch", (("near", "median", st_["s_med"]), ("mid", "P75", st_["s_p75"]), ("far", "P90", st_["s_p90"]))),
+                           ("runaway", (("near", "median", st_["r_med"][0]), ("mid", "P75", st_["r_p75"][0])))):
+            for e, lab, odds in ends:
+                if zone == "stretch":
+                    zl, why = f"stretch {lab}", f"Push past the line before coming back: {odds}% of touched sessions get here"
+                else:
+                    after = st_["r_med"][1] if lab == "median" else st_["r_p75"][1]
+                    zl = f"No-return {lab}"
+                    why = (f"{odds}% of touched sessions get here, and then only {after}% come back to the open "
+                           f"({st_['not_r']}% do when it isn't reached)")
+                add(id=f"tbr_{key}_{zone}_{e}", group=grp, label=f"{tag} {zl}", price=out[r, cols[f'{zone}_{e}']],
+                    frm=t_at, until=b, odds=odds, carry=False, color=COLORS[zone], why=why)
+        rv = _fin(out[r, cols["revert_at"]])
+        if rv is not None:
+            for e, lab, odds in (("near", "median", 50.0), ("mid", "P75", 25.0), ("far", "P90", 10.0)):
+                add(id=f"tbr_{key}_follow_{e}", group=grp, label=f"{tag} follow-through {lab}",
+                    price=out[r, cols[f'follow_{e}']], frm=int(rv), until=b, odds=odds, carry=False,
+                    color=COLORS["follow"],
+                    why=f"After coming back, {odds:g}% of sessions run this far past the open on the other side")
+
     # Day so far
     sl_ = slice(i0, last_i + 1)
     if last_i >= i0:
@@ -358,11 +552,11 @@ def _resolve(day: dict, bars: _Bars) -> None:
     hours: dict[str, list[dict]] = {}
     for lv in day["levels"]:
         lv.setdefault("origUntil", lv["until"])
-        if lv["kind"] != "open" and not lv.get("hour"):
+        if lv["kind"] != "open" and not lv.get("hour") and lv.get("carry", True):
             lv["until"] = end  # missed targets stay open for the rest of the day
         if lv["kind"] == "hour_open":
             continue
-        _scan(lv, bars)
+        _scan(lv, bars, touch=bool(lv.get("touch")))
         if lv.get("hour"):
             hours.setdefault(lv["id"].split("_")[1], []).append(lv)
     for lv in day["levels"]:
@@ -413,19 +607,28 @@ def _shell(d: date) -> dict:
             "start": start, "end": end, "sessions": sessions}
 
 
-def build_plan(m1_rows: np.ndarray, h1_rows: np.ndarray, d: date) -> dict:
-    """The Game Plan for trading day ``d`` from 1-minute bars (covering the two days before it)
-    and hourly bars (~6 weeks, for the SDEV, average day range and last week)."""
+def build_plan(m1_rows: np.ndarray, h1_rows: np.ndarray, d: date, h1_long: np.ndarray | None = None) -> dict:
+    """The Game Plan for trading day ``d`` from 1-minute bars (~5 weeks before it, for the TBR
+    SDEVs), hourly bars (~6 weeks, for the SDEV, average day range and last week) and,
+    optionally, ~14 months of hourly bars for the weekly and monthly SDEV bands."""
     bars, h1 = _Bars(m1_rows), _Bars(h1_rows)
     days = _cme_days(h1)
+    X: dict[str, Any] = {}
     if len(bars):
-        BR = breaks(bars.t, bars.o, bars.h, bars.l, bars.c)
-        HS = hour_stats(bars.t, bars.o, bars.h, bars.l, bars.c)
+        args = (bars.t, bars.o, bars.h, bars.l, bars.c)
+        BR = breaks(*args)
+        HS = hour_stats(*args)
+        X["AM"] = am_tbr(*args)
+        X["TB"] = {k: session_fade(*args, k) for k in TBR_SESSIONS if k != "am"}
     else:
         BR = HS = np.zeros((0, 64))
+    hl = _Bars(h1_long if h1_long is not None else h1_rows)
+    if len(hl):
+        X["h1L"] = hl
+        X["MT"] = mtf_sdev(hl.t, hl.o, hl.h, hl.l, hl.c, show={"d", "w", "m"})
 
     today = _shell(d)
-    today.update(_day_levels(d, bars, BR, HS, h1, days) if len(bars) else {"levels": [], "ctx": {}})
+    today.update(_day_levels(d, bars, BR, HS, h1, days, X) if len(bars) else {"levels": [], "ctx": {}})
     _resolve(today, bars)
 
     # Carry in what yesterday never touched
@@ -436,12 +639,13 @@ def build_plan(m1_rows: np.ndarray, h1_rows: np.ndarray, d: date) -> dict:
             break
         p = previous_trading_day(p)
     prev = _shell(p)
-    prev.update(_day_levels(p, bars, BR, HS, h1, days) if len(bars) else {"levels": []})
+    prev.update(_day_levels(p, bars, BR, HS, h1, days, X) if len(bars) else {"levels": []})
     _resolve(prev, bars)
     have = {lv["price"] for lv in today["levels"]}
     tag = prev["label"].split(" ")[0]
     for lv in prev["levels"]:
-        if lv["kind"] != "target" or lv.get("hour") or lv.get("never") or lv["group"] == "Week":
+        if (lv["kind"] != "target" or lv.get("hour") or lv.get("never") or not lv.get("carry", True)
+                or lv["group"] in ("Week", "MTF W", "MTF M")):
             continue
         if lv.get("hitAt") is not None or lv["price"] in have:
             continue
@@ -450,7 +654,7 @@ def build_plan(m1_rows: np.ndarray, h1_rows: np.ndarray, d: date) -> dict:
         carried = {**lv, "id": f"y_{lv['id']}", "label": f"{tag} {lv['label']}", "frm": today["start"], "until": today["end"],
                    "origUntil": today["start"], "odds": None, "oddsFrom": None, "fromDay": tag, "prevMissed": missed,
                    "why": f"Untouched all of {prev['label']} ({', '.join(missed) or 'every session'} missed it). Still open today."}
-        _scan(carried, bars)
+        _scan(carried, bars, touch=bool(carried.get("touch")))
         today["levels"].append(carried)
 
     li = bars.idx(today["end"]) - 1
@@ -462,6 +666,8 @@ def build_plan(m1_rows: np.ndarray, h1_rows: np.ndarray, d: date) -> dict:
     for lv in today["levels"]:
         lv.pop("segs", None)
         lv.pop("rev", None)
+        lv.pop("carry", None)
+        lv.pop("touch", None)
         lv.setdefault("never", False)
     today["source"] = "ES 2016-2025"
     return today

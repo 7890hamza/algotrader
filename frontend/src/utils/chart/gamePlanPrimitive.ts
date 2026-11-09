@@ -35,7 +35,8 @@ const STUB_PX = 36;
 /** What goes on the chart: the same nearby open targets the panel lists, and today's hits. */
 export function chartLevels(plan: DayPlan, t: number, price: number): PlanLevel[] {
   const board = buildBoard(plan, t, price);
-  return [...board.above, ...board.below, ...board.done].map((r) => r.level);
+  // only the most recent hits, so the chart stays readable
+  return [...board.above, ...board.below, ...board.done.slice(0, 8)].map((r) => r.level);
 }
 
 class GamePlanRenderer implements IPrimitivePaneRenderer {
