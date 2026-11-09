@@ -10,6 +10,7 @@ from app.broker_client import BrokerClient
 from app.config import load_config
 from app.db_client import DatabaseClient
 from app.logger import setup_logging
+from app.market_hours import drop_closed_bars
 from app.stream_consumer import StreamConsumer
 from redis.asyncio import Redis
 
@@ -251,6 +252,15 @@ class IngestionService:
     ) -> None:
         if chunk_size is None:
             chunk_size = self.CHUNK_SIZE
+
+        kept = drop_closed_bars(symbol, candles)
+        if len(kept) != len(candles):
+            self.logger.info(
+                f"Skipped {len(candles) - len(kept)} {symbol} bars stamped while the market was closed"
+            )
+        candles = kept
+        if not candles:
+            return
 
         total_chunks = (len(candles) + chunk_size - 1) // chunk_size
         for i in range(0, len(candles), chunk_size):

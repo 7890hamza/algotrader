@@ -101,10 +101,12 @@ import { useCurrentMarketStore } from "@/stores/currentMarketStore";
 import { useCurrentTimeframeStore } from "@/stores/currentTimeframeStore";
 import { useBacktestOverlayStore } from "@/stores/backtestOverlayStore";
 import { fetchCandles as fetchHistoricalCandles } from "@/api/candleClient";
+import { TIMEFRAME_TO_MINUTES } from "@/utils/timeframes";
 import type {
   CandleUpdateMessage,
   ChartCandle,
   IndicatorUpdateMessage,
+  TimeframeCode,
 } from "@/types/contracts";
 import { wsService, type WebSocketEventHandler } from "@/utils/websocketService";
 import {
@@ -203,6 +205,7 @@ interface ChartAreaData {
   candlesFetchLimit: number;
   indicatorBatchSize: number;
   shouldScrollToRealTime: boolean;
+  liveGapFetchedFrom: number | null;
   indicatorMessageHandler: WebSocketEventHandler<"indicatorUpdate"> | null;
   chartSession: ChartSession | null;
   backtestOverlayTarget: HTMLElement | null;
@@ -277,6 +280,7 @@ export default defineComponent({
       candlesFetchLimit: 500,
       indicatorBatchSize: 500,
       shouldScrollToRealTime: false,
+      liveGapFetchedFrom: null,
       indicatorMessageHandler: null,
       chartSession: null,
       backtestOverlayTarget: null,
@@ -911,6 +915,7 @@ export default defineComponent({
     },
 
     updateCurrentCandle(candle: CandleUpdateMessage): void {
+      this.backfillLiveGap(candle);
       this.candlesticksStore.updateCandle(candle);
       this.updateCandlestick({
         timestamp_ms: candle.timestamp_ms,
@@ -922,6 +927,38 @@ export default defineComponent({
         volume: candle.volume,
       });
       this.refreshBacktestMarkers();
+    },
+
+    /**
+     * A live bar that lands more than one bar after the last loaded one means bars were stored
+     * while this chart was open (e.g. the broker back-filled after a reconnect or the session
+     * open). Fetch that stretch once and slot it in, so the chart has no false gap.
+     */
+    backfillLiveGap(candle: CandleUpdateMessage): void {
+      const bars = this.candlesticksStore.data;
+      const last = bars[bars.length - 1];
+      const key = this.currentChartSessionKey();
+      if (!last || !key.symbol || !key.timeframe) return;
+      const step = (TIMEFRAME_TO_MINUTES[key.timeframe as TimeframeCode] ?? 1) * 60_000;
+      if (candle.timestamp_ms - last.timestamp_ms <= step) return;
+      if (this.liveGapFetchedFrom === last.timestamp_ms) return;
+      this.liveGapFetchedFrom = last.timestamp_ms;
+      const symbol = key.symbol;
+      const timeframe = key.timeframe;
+      void fetchHistoricalCandles(symbol, timeframe, {
+        startMs: last.timestamp_ms + step,
+        endMs: candle.timestamp_ms - 1,
+        limit: this.candlesFetchLimit,
+        exchange: key.exchange,
+      }).then((candles) => {
+        const now = this.currentChartSessionKey();
+        if (now.symbol !== symbol || now.timeframe !== timeframe) return;
+        if (this.candlesticksStore.merge(candles) > 0) {
+          this.renderCandlesticks(this.candlesticksStore.data);
+        }
+      }).catch((error: unknown) => {
+        console.error('Failed to fill the gap before a live candle:', error);
+      });
     },
 
     getBacktestLoadedCandleRange(): LoadedCandleRange | null {

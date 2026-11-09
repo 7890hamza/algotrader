@@ -86,3 +86,22 @@ describe('candlesticks store', () => {
     expect(store.data).toEqual(candles);
   });
 });
+
+describe('candlesticks store merge', () => {
+  beforeEach(() => {
+    setActivePinia(createPinia());
+  });
+
+  const bar = (time: number, close = 1): ChartCandle => ({
+    timestamp_ms: time * 1000, time, open: 1, high: 1, low: 1, close, volume: 1,
+  });
+
+  it('fills a hole in the middle and keeps existing bars', () => {
+    const store = useCandlesticksStore();
+    store.replace([bar(60), bar(300, 9)]);
+    expect(store.merge([bar(120), bar(180), bar(300, 2)])).toBe(2);
+    expect(store.data.map((c) => c.time)).toEqual([60, 120, 180, 300]);
+    expect(store.data[3].close).toBe(9);
+    expect(store.merge([bar(120)])).toBe(0);
+  });
+});

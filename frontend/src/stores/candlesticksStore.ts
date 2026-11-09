@@ -98,6 +98,15 @@ export const useCandlesticksStore = defineStore('candlesticks', () => {
     data.value = markRaw([...candles, ...data.value]);
   }
 
+  /** Adds candles anywhere in the series (filling a hole); an existing bar at the same time is kept. */
+  function merge(candles: readonly ChartCandle[]): number {
+    const have = new Set(data.value.map((c) => c.time));
+    const fresh = candles.filter((c) => !have.has(c.time));
+    if (!fresh.length) return 0;
+    data.value = markRaw([...data.value, ...fresh].sort((a, b) => a.time - b.time));
+    return fresh.length;
+  }
+
   return {
     type,
     data,
@@ -106,5 +115,6 @@ export const useCandlesticksStore = defineStore('candlesticks', () => {
     clear,
     replace,
     prepend,
+    merge,
   };
 });
