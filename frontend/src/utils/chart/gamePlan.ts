@@ -144,11 +144,12 @@ export function buildBoard(plan: DayPlan, t: number, price: number, opts: { rows
   const { ctx } = plan;
   const row = (l: PlanLevel): BoardRow => ({ level: l, odds: levelOdds(l, t, plan), distance: l.price - price, track: levelTrack(l, t, plan) });
 
-  const open = plan.levels.filter((l) => (isBoardTarget(l) || l.kind === 'hour_open') && levelStatus(l, t) === 'open');
+  // prior-hour highs / lows count as targets while their hour is live
+  const open = plan.levels.filter((l) => (isBoardTarget(l) || l.kind === 'hour_open' || (l.kind === 'target' && l.hour)) && levelStatus(l, t) === 'open');
   const above = open.filter((l) => l.price > price).sort((a, b) => a.price - b.price).slice(0, rows).map(row).reverse();
   const below = open.filter((l) => l.price <= price).sort((a, b) => b.price - a.price).slice(0, rows).map(row);
   const done = plan.levels
-    .filter((l) => isBoardTarget(l) && levelStatus(l, t) === 'done')
+    .filter((l) => (isBoardTarget(l) || (l.kind === 'target' && l.hour && l.until > t)) && levelStatus(l, t) === 'done')
     .sort((a, b) => (b.hitAt ?? 0) - (a.hitAt ?? 0))
     .map(row);
   const allOpen = open.filter((l) => l.kind === 'target').sort((a, b) => b.price - a.price).map(row);

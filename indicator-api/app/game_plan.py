@@ -78,6 +78,15 @@ TBR_ODDS: dict[str, dict] = {
     "ny": {"line": [76.2, 76.3], "back": 74.4, "s_med": 62.1, "s_p75": 42.3, "s_p90": 27.7,
            "r_med": [15.1, 14.6], "r_p75": [7.0, 8.4], "not_r": 85.1},
 }
+# Hour stats: how often each New York hour (open inside the prior hour's range) trades 1 tick past
+# the prior-hour [high, low]. ES 2016-2025 1-minute.
+HOUR_SWEEP: dict[int, list[float]] = {
+    0: [40.8, 40.3], 1: [52.8, 48.8], 2: [54.9, 50.6], 3: [58.6, 55.6], 4: [42.4, 38.5],
+    5: [42.4, 38.2], 6: [47.6, 42.9], 7: [52.2, 42.8], 8: [54.4, 53.9], 9: [64.7, 61.6],
+    10: [52.2, 48.8], 11: [44.3, 38.2], 12: [44.5, 39.5], 13: [49.6, 42.3], 14: [52.7, 46.8],
+    15: [58.7, 50.0], 16: [28.9, 24.5], 19: [38.4, 36.3], 20: [52.4, 50.8], 21: [43.6, 39.5],
+    22: [38.5, 34.7], 23: [40.0, 34.9],
+}
 # key: (name, start hour PT, end hour PT, day offset, color)
 TBR_SESSIONS: dict[str, tuple[str, int, int, int, str]] = {
     "cme": ("CME", 15, 17, -1, "#A78BFA"),
@@ -400,10 +409,31 @@ def _day_levels(d: date, bars: _Bars, BR: np.ndarray, HS: np.ndarray, h1: _Bars,
         hod = local.hour
         lab = datetime.fromtimestamp(a / 1000, PT).strftime("%-I %p")
         sl = HOUR_SLICES.get(str(hod))
+        setup = HS[i, HC["setup"]] == 1
         for key, label, col in (("hh", "high", "ph"), ("hl", "low", "pl")):
             first20 = f" Sweeps here come in the first 20 min {sl['high' if key == 'hh' else 'low'][0]:.0f}% of the time" if sl else ""
+            odds = HOUR_SWEEP.get(hod, [None, None])[0 if key == "hh" else 1] if setup else None
+            took = f" This hour takes it {odds}% of the time." if odds is not None else ""
             add(id=f"{key}_{a}", group="Hour", label=f"{lab} prior-hour {label}", price=HS[i, HC[col]], frm=a,
-                until=a + HOUR_MS, hour=True, color=COLORS["hour"], why=f"Prior-hour {label}.{first20}")
+                until=a + HOUR_MS, hour=True, odds=odds, color=COLORS["hour"],
+                why=f"Prior-hour {label}.{took}{first20}")
+        # After a sweep: the MAE (stretch past the swept level) and, once back at the open,
+        # the MFE (follow-through past the open on the other side). Hour Stats zones.
+        j = min(bars.idx(a + HOUR_MS), last_i + 1) - 1
+        side = _fin(HS[j, HC["side"]])
+        if side is not None:
+            br = int(HS[j, HC["breach_at"]])
+            which = "high" if side > 0 else "low"
+            for e, pct, odds in (("near", "median", 50.0), ("mid", "P75", 25.0), ("far", "P90", 10.0)):
+                add(id=f"hz_{a}_s{e}", group="Hour zones", label=f"{lab} MAE {pct}", price=round(HS[j, HC[f"stretch_{e}"]] * 4) / 4,
+                    frm=br, until=a + HOUR_MS, odds=odds, carry=False, color=COLORS["stretch"],
+                    why=f"Swept the prior-hour {which}. Of hours that still came back to the open, {odds:g}% stretched this far past it first (MAE)")
+            rv = _fin(HS[j, HC["revert_at"]])
+            if rv is not None:
+                for e, pct, odds in (("near", "median", 50.0), ("mid", "P75", 25.0), ("far", "P90", 10.0)):
+                    add(id=f"hz_{a}_f{e}", group="Hour zones", label=f"{lab} MFE {pct}", price=round(HS[j, HC[f"follow_{e}"]] * 4) / 4,
+                        frm=int(rv), until=a + HOUR_MS, odds=odds, carry=False, color=COLORS["follow"],
+                        why=f"Back at the hour open. {odds:g}% of these hours then run this far past it on the other side (MFE)")
         rates = HOUR_RATES.get(str(hod), {})
         add(id=f"ho_{a}", group="Hour", label=f"Back to {lab} open", price=HS[i, HC["open"]], frm=a,
             until=a + HOUR_MS, hour=True, kind="hour_open", segs=rates.get("segs"), rev=rates.get("rev"), color=COLORS["open"])

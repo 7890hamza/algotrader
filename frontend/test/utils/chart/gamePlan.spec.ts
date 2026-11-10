@@ -62,3 +62,15 @@ describe('game plan levels', () => {
     expect(chartLevels(plan, plan.last!.t, 7500).map((l) => l.id).sort()).toEqual(['am_d0.5', 'asia_d1', 'asia_u1', 'y_ibx']);
   });
 });
+
+describe('hour stats on the board', () => {
+  it('lists the live hour prior-hour high as a target and keeps only this hour in done', () => {
+    const t = S + 17 * H;
+    const hh = lv({ id: 'hh_1', label: '8 AM prior-hour high', price: 7505, frm: S + 17 * H, origUntil: S + 18 * H, until: S + 18 * H, hour: true, odds: 54.4 });
+    const oldHit = lv({ id: 'hl_0', label: '7 AM prior-hour low', price: 7495, frm: S + 16 * H, origUntil: S + 17 * H, until: S + 17 * H, hour: true, hitAt: S + 16.5 * H });
+    const board = buildBoard({ ...plan, levels: [...plan.levels, hh, oldHit] }, t, 7500);
+    expect(board.above.map((r) => r.level.id)).toContain('hh_1');
+    expect(board.done.map((r) => r.level.id)).not.toContain('hl_0');
+    expect(board.tally.every((x) => x.hit + x.missed < 10)).toBe(true);
+  });
+});

@@ -112,7 +112,7 @@ class AllIndicatorsTests(unittest.TestCase):
         h1 = hourly(m1)
         plan = build_plan(m1, h1, date(2026, 11, 4), h1_long=h1)
         groups = {lv["group"] for lv in plan["levels"]}
-        for g in ("AMTB", "TBR", "MTF D", "Opens", "ALN", "IB retrace", "SDEV", "Hour", "IB"):
+        for g in ("AMTB", "TBR", "MTF D", "Opens", "ALN", "IB retrace", "SDEV", "Hour", "Hour zones", "IB"):
             self.assertIn(g, groups)
         self.assertIn(plan["ctx"]["aln"]["pattern"], (1, 2, 3, 4))
         # TBR lines stay in their own session: never carried to the end of the day
