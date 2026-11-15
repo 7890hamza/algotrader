@@ -10,6 +10,7 @@ from .hour_stats import HourStats
 from .breaks import Breaks
 from .aln_sdev import AlnSDEV
 from .mtf_sdev import MtfSDEV
+from .seiz import SEIZ
 from .macd import MACD
 from .rsi import RSI
 from .session_sdev import CmeOpenSDEV, SessionSDEV
@@ -33,4 +34,5 @@ __all__ = [
     "Breaks",
     "AlnSDEV",
     "MtfSDEV",
+    "SEIZ",
 ]

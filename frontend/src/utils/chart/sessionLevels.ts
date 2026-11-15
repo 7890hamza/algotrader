@@ -132,6 +132,8 @@ export function buildSessionLevelSegments(
     const joinGaps = output.joinGaps === true;
     // sessionMinutes on an output: its own window length (multi-session indicators).
     const ownSeconds = typeof output.sessionMinutes === 'number' ? output.sessionMinutes * 60 : sessionSeconds;
+    // hover: plain-language lines shown when the cursor is on the line (SEIZ).
+    const hoverLines = Array.isArray(output.hover) ? output.hover.filter((x): x is string => typeof x === 'string') : [];
     let current: SessionLevelSegment | null = null;
 
     const close = (): void => {
@@ -179,6 +181,7 @@ export function buildSessionLevelSegments(
         markerTime,
         markerColor,
         sessionEndTime: toSessionEnd && ownSeconds && ownSeconds > bar ? time + ownSeconds - bar : null,
+        ...(hoverLines.length ? { hoverLines } : {}),
       };
     }
     close();

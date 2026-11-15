@@ -76,3 +76,21 @@ services:
       - ./dom-memory:/data
     mem_limit: 512m
     restart: unless-stopped
+
+  hyperliquid-service:
+    # Read-only: copies Hyperliquid trade.xyz XYZ100 / SP500 1-minute candles into the database
+    # (exchange HYPERLIQUID) and compares them with NQ / ES. No keys, no orders.
+    container_name: hyperliquid-service
+    build:
+      context: .
+      dockerfile: hyperliquid-service/Dockerfile
+    environment:
+      DATA_ACCESSOR_URL: http://database-accessor-api:8000
+      HL_COINS: "xyz:XYZ100=XYZ100>NQ, xyz:SP500=SP500>ES"
+    ports:
+      - "127.0.0.1:8040:8040"
+    depends_on:
+      database-accessor-api:
+        condition: service_healthy
+    mem_limit: 256m
+    restart: unless-stopped

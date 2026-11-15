@@ -29,6 +29,7 @@ from .indicators import (
     Breaks,
     AlnSDEV,
     MtfSDEV,
+    SEIZ,
     SessionSDEV,
 )
 
@@ -56,6 +57,7 @@ def _create_registry() -> IndicatorRegistry:
             Breaks(),
             AlnSDEV(),
             MtfSDEV(),
+            SEIZ(),
         ]
     )
     try:

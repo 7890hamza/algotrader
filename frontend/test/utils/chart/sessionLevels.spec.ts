@@ -53,6 +53,15 @@ describe('sessionLevels', () => {
     expect(minus).toMatchObject({ lineStyle: 2, lineWidth: 1, color: '#EF5350', touch: 'low' });
   });
 
+  it('copies plain-language hover lines from the output metadata (SEIZ)', () => {
+    const data = session(0, 3, 100, 101, 99);
+    const withHover = { open: { ...outputs.open, hover: ['1H open', 'A normal pullback comes back here.'] } };
+    const [open] = buildSessionLevelSegments(data, withHover);
+    expect(open.hoverLines).toEqual(['1H open', 'A normal pullback comes back here.']);
+    const [plain] = buildSessionLevelSegments(data, { open: outputs.open });
+    expect(plain.hoverLines).toBeUndefined();
+  });
+
   it('applies style overrides from indicator settings', () => {
     const data = session(0, 3, 100, 101, 99);
     const [open] = buildSessionLevelSegments(data, outputs, { open: { color: '#ffffff' } });

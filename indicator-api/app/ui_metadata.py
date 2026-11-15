@@ -479,6 +479,50 @@ def _aln_sdev_metadata() -> dict:
     return {"overlay": True, "outputs": outputs}
 
 
+SEIZ_TF = (("h1", "1H", 60, "hour"), ("h4", "4H", 240, "4-hour candle"), ("d", "D", 1380, "day"))
+
+
+def _seiz_metadata() -> dict:
+    """SEIZ made simple: per candle the open (target), a green Buy 75% and red Sell 75% line
+    (internal zones), orange Stretch 85% and dark red Extreme 99% past the prior high / low
+    (external zones), and the prior high / low. Hovering a line explains it in one sentence."""
+    green, red, orange, dark, grey = "#3FB950", "#E0574A", "#E9A23B", "#9B2C2C", "#8A919C"
+    outputs: dict[str, dict] = {}
+    for tf, label, minutes, word in SEIZ_TF:
+        def lvl(key, text, color, hover, style=DOTTED, width=1):
+            outputs[f"{tf}_{key}"] = {
+                "type": "level", "label": f"{label} {text}", "labelColor": SDEV_LABEL_COLOR,
+                "sessionMinutes": minutes, "hover": hover,
+                "plotOptions": {"lineWidth": width, "lineStyle": style, "color": color},
+            }
+        lvl("open", "Open", SDEV_OPEN_COLOR, [f"{label} open", f"A normal pullback this {word} tends to come back here."], width=1)
+        lvl("ph", "Prior High", grey, [f"Prior {word}'s high", "Above it the Stretch / Extreme lines take over."])
+        lvl("pl", "Prior Low", grey, [f"Prior {word}'s low", "Below it the Stretch / Extreme lines take over."])
+        names = {
+            "il": ("Buy", green, "pull back less than this below the open"),
+            "ih": ("Sell", red, "pop less than this above the open"),
+            "eh": ("Stretch Up", orange, "breakouts above the prior high stop before this"),
+            "el": ("Stretch Down", orange, "breakouts below the prior low stop before this"),
+        }
+        for z, (name, color, what) in names.items():
+            for p in (50, 75, 85, 99):
+                odds = {50: "1 in 2", 75: "3 in 4", 85: "85 in 100", 99: "99 in 100"}[p]
+                ext = z in ("eh", "el")
+                text = f"{'Extreme' + name[7:] if ext and p == 99 else name} {p}%"
+                c = dark if ext and p == 99 else color
+                main = (not ext and p == 75) or (ext and p in (85, 99))
+                plain = f"{odds} {what}." if ext else f"{odds} {word}s {what}."
+                lvl(f"{z}{p}", text, c, [f"{label} {text}", plain,
+                                          "18 years of NQ / ES data, fixed when the candle opens."],
+                    style=DOTTED if main else 2, width=2 if (not ext and p == 75) else 1)
+    guide = {"kind": "seiz", "source": "NinjaTrader NQ / ES 1-minute, 2008-2026",
+             "read": ["Buy / Sell 75%: 3 in 4 candles pull back less than this from the open.",
+                      "Stretch 85%: only 15 in 100 breakouts went further.",
+                      "Extreme 99%: only 1 in 100 went further.",
+                      "A map of how far price usually travels, not a buy or sell signal."]}
+    return {"overlay": True, "outputs": outputs, "guide": guide}
+
+
 MTF_TIMEFRAMES = (
     # key, label prefix, kept in the price scale's autoscale. Lines run to the latest bar so
     # every label lines up just right of price.
@@ -718,4 +762,5 @@ UI_METADATA: dict[str, dict] = {
     "breaks": _breaks_metadata(),
     "aln_sdev": _aln_sdev_metadata(),
     "mtf_sdev": _mtf_sdev_metadata(),
+    "seiz": _seiz_metadata(),
 }
