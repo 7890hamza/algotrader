@@ -20,3 +20,6 @@ lab/arena/*
 lab/logs/*
 !lab/**/.gitkeep
 
+
+# Memory DOM database (dom-service)
+dom-memory/

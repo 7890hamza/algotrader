@@ -61,3 +61,18 @@ services:
       database-accessor-api:
         condition: service_healthy
 
+
+  dom-service:
+    # Memory DOM: NinjaTrader's AlgoTraderDomBridge streams its DOM here (TCP 8060 on this
+    # PC); the chart's DOM panel reads it through the frontend. Remembers pulled / filled /
+    # held orders and how price reacted (dom-memory/dom_memory.sqlite).
+    container_name: dom-service
+    build:
+      context: .
+      dockerfile: dom-service/Dockerfile
+    ports:
+      - "127.0.0.1:8060:8060"
+    volumes:
+      - ./dom-memory:/data
+    mem_limit: 512m
+    restart: unless-stopped

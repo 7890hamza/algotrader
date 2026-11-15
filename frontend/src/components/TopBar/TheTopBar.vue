@@ -21,6 +21,16 @@
       @click="gamePlanStore.toggle()"
     >Game plan</n-button>
 
+    <n-button
+      round
+      class="game-plan-button"
+      :class="{ 'game-plan-button--active': domStore.visible }"
+      data-testid="topbar-memory-dom"
+      title="Memory DOM: NinjaTrader's order book, plus what big orders did and how price reacted"
+      :aria-pressed="domStore.visible"
+      @click="domStore.toggle()"
+    >DOM</n-button>
+
     <span v-if="remote" class="active-chart-note" data-testid="active-chart-note">Right chart</span>
 
     <div class="chart-interaction-controls" role="group" aria-label="Chart interaction mode">
@@ -134,6 +144,7 @@ import TimeframeDropdown from '@/components/TopBar/TimeframeDropdown.vue';
 import TopBarModals from '@/components/TopBar/Modals/TopBarModals.vue';
 import { HandRightOutline, ResizeOutline } from '@/icons';
 import { useCurrentMarketStore } from '@/stores/currentMarketStore';
+import { useDomStore } from '@/stores/domStore';
 import { useGamePlanStore } from '@/stores/gamePlanStore';
 import { useModalStore } from '@/stores/modalStore';
 import type { ChartLayout } from '@/utils/chartPane';
@@ -170,6 +181,7 @@ function openModal(name: string): void {
 const currentMarketStore = useCurrentMarketStore();
 const modalStore = useModalStore();
 const gamePlanStore = useGamePlanStore();
+const domStore = useDomStore();
 const currentSymbol = computed(() => currentMarketStore.symbol);
 const selectedChartInteractionModeColor = '#7fe7c4';
 

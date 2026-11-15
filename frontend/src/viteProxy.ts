@@ -46,6 +46,13 @@ export function createDevServerProxy(env: DevServerEnv): Record<string, ProxyOpt
       headers: { 'X-Account-Id': env.ACCOUNT_ID || '1' },
       rewrite: (path) => path.replace(/^\/api\/broker/, ''),
     },
+    // Memory DOM (NinjaTrader depth + what big orders did); ws for the live ladder.
+    '/api/dom': {
+      target: env.VITE_PROXY_DOM_TARGET || 'http://dom-service:8030',
+      changeOrigin: true,
+      ws: true,
+      rewrite: (path) => path.replace(/^\/api\/dom/, ''),
+    },
     '/api/indicator-api': {
       target: serviceTarget(
         env,
