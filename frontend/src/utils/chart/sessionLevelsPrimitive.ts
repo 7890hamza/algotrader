@@ -46,6 +46,7 @@ interface DrawableBox {
   dividers?: number[];
 }
 
+const EDGE_LABEL_FONT = '500 10.5px -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif';
 const SLICE_FONT = '500 10.5px -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif';
 
 function withAlpha(color: string, alpha: number): string {
@@ -61,6 +62,7 @@ class SessionBoxesRenderer implements IPrimitivePaneRenderer {
     private readonly boxes: readonly DrawableBox[],
     private readonly layer: 'fill' | 'labels',
     private readonly precision: number,
+    private readonly priceToY?: (price: number) => number | null,
   ) {}
 
   draw(target: CanvasRenderingTarget2D): void {
@@ -70,9 +72,34 @@ class SessionBoxesRenderer implements IPrimitivePaneRenderer {
         for (const { box, left, right, top, bottom, dividers } of this.boxes) {
           const width = Math.max(1, right - left);
           const height = Math.max(1, bottom - top);
+          if (box.rule) {
+            // SEIZ candle open: dotted vertical rule across the whole pane.
+            context.strokeStyle = withAlpha(box.color, 0.85);
+            context.lineWidth = 1;
+            context.setLineDash([2, 3]);
+            context.beginPath();
+            context.moveTo(crisp(left + (right - left) / 2), 0);
+            context.lineTo(crisp(left + (right - left) / 2), mediaSize.height);
+            context.stroke();
+            context.setLineDash([]);
+            continue;
+          }
           context.fillStyle = withAlpha(box.color, box.fillOpacity ?? BOX_FILL_ALPHA);
           context.fillRect(left, top, width, height);
-          if (box.fillOpacity !== undefined && box.fillOpacity > 0 && box.noLabels && !box.title && !box.dashed) continue; // plain bands
+          if (box.midline !== undefined && this.priceToY) {
+            const y = this.priceToY(box.midline);
+            if (y !== null) {
+              context.strokeStyle = withAlpha(box.color, 0.9);
+              context.lineWidth = 1;
+              context.setLineDash([5, 4]);
+              context.beginPath();
+              context.moveTo(left, crisp(y));
+              context.lineTo(right, crisp(y));
+              context.stroke();
+              context.setLineDash([]);
+            }
+          }
+          if (box.fillOpacity !== undefined && box.fillOpacity > 0 && box.noLabels && !box.title && !box.dashed && !box.outline) continue; // plain bands
           context.strokeStyle = withAlpha(box.color, box.fillOpacity === 0 ? 1 : 0.75);
           context.lineWidth = 1;
           if (box.dashed) context.setLineDash([2, 3]);
@@ -103,6 +130,21 @@ class SessionBoxesRenderer implements IPrimitivePaneRenderer {
         }
       } else {
         for (const { box, left, right, top, bottom } of this.boxes) {
+          if (box.edgeLabel && right - left > 34 && bottom - top >= 12) {
+            // SEIZ band label, right-aligned inside the band at its outer edge.
+            context.font = EDGE_LABEL_FONT;
+            context.fillStyle = 'rgba(214, 219, 226, 0.88)';
+            context.textAlign = 'right';
+            const x = Math.min(right, mediaSize.width) - 6;
+            if (box.edgeAt === 'bottom') {
+              context.textBaseline = 'bottom';
+              context.fillText(box.edgeLabel, x, bottom - 2);
+            } else {
+              context.textBaseline = 'top';
+              context.fillText(box.edgeLabel, x, top + 2);
+            }
+            context.textAlign = 'left';
+          }
           if (box.title && right - left > 30) {
             context.font = BOX_LABEL_FONT;
             context.fillStyle = withAlpha(box.color, 0.95);
@@ -920,7 +962,12 @@ export class SessionLevelsPrimitive implements ISeriesPrimitive<Time> {
       const dividers = box.slices?.times.map(xAt).filter((x): x is number => x !== null);
       drawables.push({ box, left: Number(start) - half, right: end + half, top: Number(top), bottom: Number(bottom), dividers });
     }
-    return drawables.length > 0 ? new SessionBoxesRenderer(drawables, layer, this.precision) : null;
+    const series = params.series;
+    const priceToY = (price: number): number | null => {
+      const y = series.priceToCoordinate(price);
+      return y === null ? null : Number(y);
+    };
+    return drawables.length > 0 ? new SessionBoxesRenderer(drawables, layer, this.precision, priceToY) : null;
   }
 
   createRenderer(): IPrimitivePaneRenderer | null {

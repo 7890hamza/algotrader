@@ -72,6 +72,7 @@
 
     <aln-guide-overlay :time-zone="chartTimeZone" />
     <tbr-stats-overlay />
+    <seiz-dashboard />
     <am-tbr-guide-overlay :time-zone="chartTimeZone" />
 
     <div>
@@ -141,6 +142,7 @@ import { displayTimeZoneForTimeframe } from "@/utils/chart/chartTimeZone";
 import Indicator from "@/components/Chart/Indicator/Indicator.vue";
 import AlnGuideOverlay from "@/components/Chart/AlnGuideOverlay.vue";
 import TbrStatsOverlay from "@/components/Chart/TbrStatsOverlay.vue";
+import SeizDashboard from "@/components/Chart/SeizDashboard.vue";
 import AmTbrGuideOverlay from "@/components/Chart/AmTbrGuideOverlay.vue";
 import { CloseCircleOutline } from "@/icons";
 import PositionToolCard from "@/components/Chart/PositionToolCard.vue";
@@ -236,6 +238,7 @@ export default defineComponent({
   components: {
     AlnGuideOverlay,
     TbrStatsOverlay,
+    SeizDashboard,
     AmTbrGuideOverlay,
     CloseCircleOutline,
     PositionToolCard,

@@ -1,28 +1,22 @@
-"""SEIZ (Statistical External & Internal Zones), made simple.
+"""SEIZ: Statistical External & Internal Zones.
 
-Every candle (1H, 4H, daily) either stays inside the previous candle's range or breaks out of it,
-on each side. From 18 years of 1-minute futures data (2008-2026, NinjaTrader) we measured, for
-each timeframe:
+A candle can only do four things on its two sides: its high stays inside the last candle's range
+(internal high) or pushes above it (external high), and the same for its low. For every timeframe
+from 15m to 1W we measured, on 18 years of NQ / ES 1-minute data, how far each of the four went:
 
-  internal high  how far the high got above the OPEN, on candles that stayed below the prior high
-  internal low   how far the low got below the OPEN, on candles that stayed above the prior low
-  external high  how far the high went past the PRIOR HIGH, on candles that broke it
-  external low   how far the low went past the PRIOR LOW, on candles that broke it
+  internal high / low   from the candle's OPEN, on candles whose extreme stayed inside the last range
+  external high / low   past the LAST HIGH / LOW, on candles that broke it
 
-and kept the 50th / 75th / 85th / 99th percentile of each (in % of price). The zones are fixed
-when the candle opens (no repaint). Like SEIZ, the internal lines on a side switch off and the
-external lines switch on once the candle breaks the prior high / low on that side.
+Each zone is split into four percentile bands, 50th / 75th / 85th / 99th: the deeper the colour,
+the rarer the move. Zones are set when the candle opens and never move; with auto switching the
+internal zone on a side gives way to the external zone the moment the last high / low breaks.
 
-The simple read (what the chart labels say):
-  Buy 75% / Sell 75%    3 in 4 candles pull back less than this from the open (internal 75th)
-  Stretch 85%           only 15 in 100 breakouts went further than this (external 85th)
-  Extreme 99%           only 1 in 100 went further (external 99th)
-  Open                  the candle's open (where a normal pullback tends to come back to)
+Stat Zone (optional): one box per side from the 25th to the 75th percentile of how far a candle's
+high / low got from its open, with a dashed line at the median: where the timeframe typically gets to.
 
-Outputs per timeframe ``tf`` in h1 / h4 / d:
-  ``tf_open``, ``tf_ph``, ``tf_pl`` and ``tf_{ih,il,eh,el}{50,75,85,99}`` (16 bands).
-``detail="simple"`` fills only open, the 75% internal lines, the 85% / 99% external lines and
-the prior high / low; ``detail="full"`` fills all 16 bands.
+Dashboard: for every timeframe, the most significant band reached so far on each side
+(``int_pct`` / ``100 + ext_pct``; 0 = none yet, 100 = external but short of the 50th) and how much
+of the candle has completed.
 """
 
 from __future__ import annotations
@@ -31,62 +25,29 @@ import math
 from typing import Dict
 
 import numpy as np
+import pandas as pd
 from zoneinfo import ZoneInfo
 
 from ..core.bars import BarTensor
 from ..core.spec import IndicatorSpec
 from ..core.tensor import Tensor
 from .base import IndicatorBase
-from .session_sdev import (
-    MINUTES_PER_DAY,
-    MS_PER_DAY,
-    MS_PER_HOUR,
-    MS_PER_MINUTE,
-    _local_ms,
-    to_epoch_ms,
-)
+from .seiz_frames import TIMEFRAMES, frame_keys, in_session
+from .seiz_tables import TABLES
+from .session_sdev import _local_ms, to_epoch_ms
 
 NEW_YORK = ZoneInfo("America/New_York")
-TIMEFRAMES = ("h1", "h4", "d")
 PCTS = (50, 75, 85, 99)
 ZONES = ("ih", "il", "eh", "el")
-CME_OPEN, CME_CLOSE = 18 * 60, 17 * 60
-
-# Percentile tables, % of price. Source: NinjaTrader 1-minute NQ / ES, 2008-01-02 to 2026-11-13,
-# stitched front month (roll on volume), candles on the CME day (New York time).
-TABLES: dict[str, dict[str, dict[str, tuple[float, float, float, float]]]] = {
-    "NQ": {
-        "h1": {"ih": (0.0562, 0.1241, 0.1850, 0.6599), "il": (0.0550, 0.1187, 0.1729, 0.6236),
-               "eh": (0.0865, 0.1873, 0.2764, 1.0152), "el": (0.0952, 0.2194, 0.3315, 1.2115)},
-        "h4": {"ih": (0.1144, 0.2374, 0.3466, 1.1119), "il": (0.1090, 0.2237, 0.3162, 1.0382),
-               "eh": (0.2055, 0.4213, 0.5919, 1.8135), "el": (0.2324, 0.5154, 0.7420, 2.3221)},
-        "d": {"ih": (0.3982, 0.7603, 1.0175, 2.7487), "il": (0.3139, 0.6156, 0.8301, 2.5434),
-              "eh": (0.4754, 0.8917, 1.2383, 3.0255), "el": (0.6289, 1.2030, 1.6225, 4.2491)},
-    },
-    "ES": {
-        "h1": {"ih": (0.0464, 0.1031, 0.1507, 0.5702), "il": (0.0455, 0.0960, 0.1414, 0.5302),
-               "eh": (0.0605, 0.1387, 0.2083, 0.8318), "el": (0.0646, 0.1579, 0.2455, 0.9810)},
-        "h4": {"ih": (0.0902, 0.1905, 0.2768, 0.9632), "il": (0.0850, 0.1760, 0.2486, 0.8392),
-               "eh": (0.1487, 0.3191, 0.4561, 1.5070), "el": (0.1641, 0.3831, 0.5661, 1.9287)},
-        "d": {"ih": (0.2921, 0.5911, 0.8236, 2.3070), "il": (0.2563, 0.4960, 0.6499, 2.1174),
-              "eh": (0.3697, 0.7086, 0.9983, 2.6898), "el": (0.4787, 0.9339, 1.3028, 3.8631)},
-    },
-}
 NQ_NAMES = ("NQ", "MNQ", "NAS", "NDX", "USTEC", "US100", "XYZ100")
+TF_MINUTES = {"15m": 15, "30m": 30, "1d": 1380, "1w": 6900} | {f"{h}h": 60 * h for h in range(1, 13)}
 
-SIMPLE = {"ih75", "il75", "eh85", "el85", "eh99", "el99"}
-PER_TF = ["open", "ph", "pl"] + [f"{z}{p}" for z in ZONES for p in PCTS]
-OUTPUTS = [f"{tf}_{k}" for tf in TIMEFRAMES for k in PER_TF]
+ZONE_OUT = ["start", "end", "open", "ph", "pl"] + [f"{z}{p}" for z in ZONES for p in PCTS] + [
+    "st_h_lo", "st_h_mid", "st_h_hi", "st_l_hi", "st_l_mid", "st_l_lo"]
+DASH_OUT = [f"d_{tf}_{k}" for tf in TIMEFRAMES for k in ("hi", "lo", "pg")]
+OUTPUTS = ZONE_OUT + DASH_OUT
 COL = {name: i for i, name in enumerate(OUTPUTS)}
-DEFAULT_SHOW = "h1"
-
-
-def parse_show(raw: object) -> list[str]:
-    names = [p.strip().lower() for p in str(raw or "").replace(";", ",").split(",") if p.strip()]
-    bad = [n for n in names if n not in TIMEFRAMES]
-    if bad:
-        raise ValueError(f"Unknown timeframes {bad}; choose from {', '.join(TIMEFRAMES)}")
-    return names
+DEFAULT_TF = "1h"
 
 
 def market_for(asset: object, choice: str = "auto") -> str:
@@ -97,116 +58,144 @@ def market_for(asset: object, choice: str = "auto") -> str:
     return "NQ" if any(k in name for k in NQ_NAMES) else "ES"
 
 
+def parse_tf(raw: object) -> str:
+    tf = str(raw or DEFAULT_TF).strip().lower().replace("min", "m").replace("hr", "h")
+    tf = {"d": "1d", "day": "1d", "daily": "1d", "w": "1w", "week": "1w", "weekly": "1w", "60m": "1h", "240m": "4h"}.get(tf, tf)
+    if tf not in TIMEFRAMES:
+        raise ValueError(f"Unknown zone timeframe {raw!r}; choose from {', '.join(TIMEFRAMES)}")
+    return tf
+
+
+def _on(raw: object) -> bool:
+    return str(raw).strip().lower() not in ("off", "false", "0", "no", "")
+
+
 def _warmup(params: Dict) -> int:
-    # Only the previous candle is needed (the statistics are fixed tables).
-    need = {"h1": 60 * 3, "h4": 240 * 3, "d": MINUTES_PER_DAY * 4}
-    tfs = parse_show(params.get("show", DEFAULT_SHOW)) or ["h1"]
+    tf = parse_tf(params.get("zone_tf", DEFAULT_TF))
+    need = TF_MINUTES[tf] * 2 + 60
+    if _on(params.get("dashboard", "on")):
+        need = max(need, TF_MINUTES["1w"] * 2 + 60 * 48)
     bar = max(1, int(params.get("_bar_minutes") or 1))
-    return math.ceil(max(need[t] for t in tfs) / bar)
+    return math.ceil(need / bar)
 
 
-def _groups(keys: np.ndarray, valid: np.ndarray) -> list[np.ndarray]:
-    rows = np.flatnonzero(valid)
-    if not rows.size:
-        return []
-    k = keys[rows]
-    return np.split(rows, np.flatnonzero(k[1:] != k[:-1]) + 1)
+def _candles(local: np.ndarray, valid: np.ndarray, tf: str, o, h, l):
+    """Per bar: candle start / end (local ms), candle open, prior high / low, running high / low."""
+    key, start, end = frame_keys(local, tf)
+    df = pd.DataFrame({"k": key, "o": o, "h": h, "l": l})
+    df.loc[~valid, ["o", "h", "l"]] = np.nan
+    g = df.groupby("k", sort=False)
+    first_o = g["o"].transform("first").to_numpy()
+    run_hi = g["h"].cummax().to_numpy()
+    run_lo = g["l"].cummin().to_numpy()
+    agg = g.agg(h=("h", "max"), l=("l", "min"))
+    order = pd.unique(key)
+    agg = agg.reindex(order)
+    prev_h = pd.Series(agg["h"].shift(1).to_numpy(), index=order)
+    prev_l = pd.Series(agg["l"].shift(1).to_numpy(), index=order)
+    return start, end, first_o, prev_h.reindex(key).to_numpy(), prev_l.reindex(key).to_numpy(), run_hi, run_lo
 
 
-def _tick_round(x: float, tick: float) -> float:
-    return round(round(x / tick) * tick, 6) if tick > 0 else x
+def _round(x: np.ndarray, tick: float) -> np.ndarray:
+    return np.round(np.round(x / tick) * tick, 6) if tick > 0 else x
 
 
-def seiz(  # noqa: C901 - one loop per zone, kept flat to read like the docstring
+def _code(value_pct: np.ndarray, bands: tuple, external: bool) -> np.ndarray:
+    """Most significant percentile passed: 0 / 50 / 75 / 85 / 99 (+100 when external)."""
+    reached = np.zeros(value_pct.shape)
+    for p, b in zip(PCTS, bands):
+        reached = np.where(value_pct >= b, p, reached)
+    return reached + (100 if external else 0)
+
+
+def seiz(
     epoch_ms: np.ndarray,
     open_: np.ndarray,
     high: np.ndarray,
     low: np.ndarray,
     *,
     market: str = "NQ",
-    show: list[str] | None = None,
-    detail: str = "simple",
+    zone_tf: str = DEFAULT_TF,
     auto_switch: bool = True,
+    stat_zone: bool = False,
+    dashboard: bool = True,
     tick: float = 0.25,
 ) -> np.ndarray:
-    show = list(TIMEFRAMES) if show is None else show
     n = len(epoch_ms)
     out = np.full((n, len(OUTPUTS)), np.nan, dtype=np.float64)
     if n == 0:
         return out
+    epoch_ms = np.asarray(epoch_ms, dtype=np.int64)
+    local = _local_ms(epoch_ms, NEW_YORK)
+    offset = local - epoch_ms
+    valid = in_session(local) & np.isfinite(open_) & np.isfinite(high) & np.isfinite(low)
     table = TABLES[market]
-    local = _local_ms(np.asarray(epoch_ms, dtype=np.int64), NEW_YORK)
-    day = local // MS_PER_DAY
-    minute = (local // MS_PER_MINUTE) % MINUTES_PER_DAY
-    valid = np.isfinite(open_) & np.isfinite(high) & np.isfinite(low) & ~((minute >= CME_CLOSE) & (minute < CME_OPEN))
-    cme_day = day + (minute >= CME_OPEN)
-    keys = {"h1": local // MS_PER_HOUR,
-            "h4": cme_day * 6 + ((minute - CME_OPEN) % MINUTES_PER_DAY) // 240,
-            "d": cme_day}
-    full = str(detail).lower() == "full"
-    for tf in show:
-        gs = _groups(keys[tf], valid)
-        t = table[tf]
-        for k in range(1, len(gs)):
-            prev, rows = gs[k - 1], gs[k]
-            ph, pl = float(np.nanmax(high[prev])), float(np.nanmin(low[prev]))
-            o = float(open_[rows[0]])
-            out[rows, COL[f"{tf}_open"]] = o
-            out[rows, COL[f"{tf}_ph"]] = ph
-            out[rows, COL[f"{tf}_pl"]] = pl
-            inside = pl < o < ph
-            # running extremes, to switch internal -> external once a side breaks
-            run_hi = np.maximum.accumulate(high[rows])
-            run_lo = np.minimum.accumulate(low[rows])
-            broke_hi = run_hi >= ph if auto_switch else np.zeros(len(rows), bool)
-            broke_lo = run_lo <= pl if auto_switch else np.zeros(len(rows), bool)
-            for i, p in enumerate(PCTS):
-                for z in ZONES:
-                    key = f"{z}{p}"
-                    if not full and key not in SIMPLE:
-                        continue
-                    pct = t[z][i] / 100
-                    if z == "ih":
-                        if not inside:
-                            continue
-                        lvl = _tick_round(o * (1 + pct), tick)
-                        if lvl >= ph:
-                            continue
-                        vis = ~broke_hi
-                    elif z == "il":
-                        if not inside:
-                            continue
-                        lvl = _tick_round(o * (1 - pct), tick)
-                        if lvl <= pl:
-                            continue
-                        vis = ~broke_lo
-                    elif z == "eh":
-                        lvl = _tick_round(ph + o * pct, tick)
-                        vis = broke_hi | (not auto_switch) | (not inside)
-                    else:
-                        lvl = _tick_round(pl - o * pct, tick)
-                        vis = broke_lo | (not auto_switch) | (not inside)
-                    vis = np.broadcast_to(vis, rows.shape)
-                    out[rows[vis], COL[f"{tf}_{key}"]] = lvl
+
+    # ---- zones for the chosen timeframe ----
+    start, end, o, ph, pl, run_hi, run_lo = _candles(local, valid, zone_tf, open_, high, low)
+    t = table[zone_tf]
+    ok = valid & np.isfinite(ph) & np.isfinite(o)
+    inside = ok & (o < ph) & (o > pl)
+    broke_hi = run_hi >= ph
+    broke_lo = run_lo <= pl
+    show_ih = inside & (~broke_hi if auto_switch else True)
+    show_il = inside & (~broke_lo if auto_switch else True)
+    show_eh = ok & ((broke_hi | ~inside) if auto_switch else True)
+    show_el = ok & ((broke_lo | ~inside) if auto_switch else True)
+    out[ok, COL["start"]] = (start - offset)[ok]
+    out[ok, COL["end"]] = (end - offset)[ok]
+    out[ok, COL["open"]] = o[ok]
+    out[ok, COL["ph"]] = ph[ok]
+    out[ok, COL["pl"]] = pl[ok]
+    for i, p in enumerate(PCTS):
+        lv = {"ih": _round(o * (1 + t["ih"][i] / 100), tick), "il": _round(o * (1 - t["il"][i] / 100), tick),
+              "eh": _round(ph + o * t["eh"][i] / 100, tick), "el": _round(pl - o * t["el"][i] / 100, tick)}
+        # an internal band can't reach past the last high / low (that's external territory)
+        lv["ih"] = np.where(lv["ih"] < ph, lv["ih"], ph)
+        lv["il"] = np.where(lv["il"] > pl, lv["il"], pl)
+        for z, mask in (("ih", show_ih), ("il", show_il), ("eh", show_eh), ("el", show_el)):
+            out[mask, COL[f"{z}{p}"]] = lv[z][mask]
+    if stat_zone:
+        sh, sl = t["sh"], t["sl"]
+        for k, q in (("st_h_lo", sh[0]), ("st_h_mid", sh[1]), ("st_h_hi", sh[2])):
+            out[ok, COL[k]] = _round(o * (1 + q / 100), tick)[ok]
+        for k, q in (("st_l_hi", sl[0]), ("st_l_mid", sl[1]), ("st_l_lo", sl[2])):
+            out[ok, COL[k]] = _round(o * (1 - q / 100), tick)[ok]
+
+    # ---- dashboard: every timeframe ----
+    if dashboard:
+        for tf in TIMEFRAMES:
+            s, e, o2, ph2, pl2, hi2, lo2 = _candles(local, valid, tf, open_, high, low)
+            tt = table[tf]
+            ok2 = valid & np.isfinite(ph2) & np.isfinite(o2)
+            in2 = (o2 < ph2) & (o2 > pl2)
+            hi_code = np.where(hi2 >= ph2, _code((hi2 - ph2) / o2 * 100, tt["eh"], True),
+                               np.where(in2, _code((hi2 - o2) / o2 * 100, tt["ih"], False), 0))
+            lo_code = np.where(lo2 <= pl2, _code((pl2 - lo2) / o2 * 100, tt["el"], True),
+                               np.where(in2, _code((o2 - lo2) / o2 * 100, tt["il"], False), 0))
+            progress = np.clip((local + 60_000 - s) / np.maximum(e - s, 1), 0, 1) * 100
+            out[ok2, COL[f"d_{tf}_hi"]] = hi_code[ok2]
+            out[ok2, COL[f"d_{tf}_lo"]] = lo_code[ok2]
+            out[ok2, COL[f"d_{tf}_pg"]] = np.round(progress[ok2])
     return out
 
 
 class SEIZ(IndicatorBase):
-    """Statistical external & internal zones for the running 1H / 4H / daily candle."""
+    """Statistical external & internal zones, 15m to 1W, with the Stat Zone and dashboard."""
 
     spec = IndicatorSpec(
         id="seiz",
-        name="SEIZ Zones",
+        name="SEIZ",
         description=(
-            "How far a 1H / 4H / daily candle usually pulls back from its open (Buy / Sell 75%) and "
-            "how far it usually runs past the prior high / low (Stretch 85%, Extreme 99%), from "
-            "18 years of NQ / ES data."
+            "Statistical External & Internal Zones: how far each candle usually goes, inside or beyond "
+            "the last candle, on sixteen timeframes (15m to 1W), from 18 years of NQ / ES data."
         ),
         parameters={
-            "show": {"type": "string", "default": DEFAULT_SHOW},
-            "detail": {"type": "string", "default": "simple"},
-            "market": {"type": "string", "default": "auto"},
-            "auto_switch": {"type": "string", "default": "on"},
+            "zone_tf": {"type": "string", "default": DEFAULT_TF, "options": list(TIMEFRAMES)},
+            "auto_switch": {"type": "string", "default": "on", "options": ["on", "off"]},
+            "stat_zone": {"type": "string", "default": "off", "options": ["off", "on"]},
+            "dashboard": {"type": "string", "default": "on", "options": ["on", "off"]},
+            "market": {"type": "string", "default": "auto", "options": ["auto", "NQ", "ES"]},
             "tick": {"type": "float", "default": 0.25},
         },
         outputs=OUTPUTS,
@@ -220,8 +209,7 @@ class SEIZ(IndicatorBase):
 
     def batch(self, data: BarTensor, params: Dict) -> Tensor:
         defaults = {k: v["default"] for k, v in self.spec.parameters.items()}
-        merged = {**defaults, **{k: v for k, v in (params or {}).items() if v is not None}}
-        show = parse_show(merged["show"])
+        p = {**defaults, **{k: v for k, v in (params or {}).items() if v is not None}}
         idx = {}
         for field in ("open", "high", "low"):
             if field not in data.fields:
@@ -233,9 +221,9 @@ class SEIZ(IndicatorBase):
         for a in range(n_assets):
             out[:, a, :] = seiz(
                 epoch_ms, *(data.data[:, a, idx[f]] for f in ("open", "high", "low")),
-                market=market_for(data.assets[a], merged["market"]), show=show,
-                detail=str(merged["detail"]), auto_switch=str(merged["auto_switch"]).strip().lower() not in ("off", "false", "0", "no"),
-                tick=float(merged["tick"]),
+                market=market_for(data.assets[a], p["market"]), zone_tf=parse_tf(p["zone_tf"]),
+                auto_switch=_on(p["auto_switch"]), stat_zone=_on(p["stat_zone"]),
+                dashboard=_on(p["dashboard"]), tick=float(p["tick"]),
             )
         return Tensor(
             data=out,
@@ -244,4 +232,4 @@ class SEIZ(IndicatorBase):
         )
 
 
-__all__ = ["SEIZ", "seiz", "TABLES", "market_for"]
+__all__ = ["SEIZ", "seiz", "TABLES", "market_for", "parse_tf", "OUTPUTS", "COL"]

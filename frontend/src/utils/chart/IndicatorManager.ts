@@ -15,6 +15,7 @@ import { DEFAULT_CHART_TIME_ZONE } from './chartTimeZone';
 import { layoutBreaks } from './breakLines';
 import { mtfLayout, readBreaksGuide } from './breaks';
 import { buildRangeBar, type RangeBar } from './rangeBar';
+import { layoutSeiz, readSeizGuide } from './seiz';
 import type { RetraceLayer } from './retrace';
 import { layoutHourStats, readHourSlices, readHourStatsGuide } from './hourStats';
 import {
@@ -97,7 +98,8 @@ function drawsOnPrice(info: IndicatorInfo): boolean {
     hasLevelOutputs(info.outputs) ||
     Object.values(info.outputs).some((output) => output.type === 'box') ||
     readGuideConfig(info.guide) !== null ||
-    isEngulfingGuide(info.guide)
+    isEngulfingGuide(info.guide) ||
+    readSeizGuide(info.guide) !== null
   );
 }
 
@@ -218,6 +220,22 @@ export class IndicatorManager {
     }
     if (isEngulfingGuide(indicator.info.guide)) {
       this.renderEngulfing(id, points);
+      return;
+    }
+    const seiz = readSeizGuide(indicator.info.guide);
+    if (seiz) {
+      const valueOf = (key: string): unknown => indicator.parameters[key]?.value ?? indicator.parameters[key]?.default;
+      const tf = String(valueOf('zone_tf') ?? '1h');
+      const label = seiz.timeframes.find((t) => t.key === tf)?.label ?? tf;
+      const times = points.map((p) => Number(p.timestamp_ms)).filter(Number.isFinite).sort((a, b) => a - b);
+      let bar = Number.POSITIVE_INFINITY;
+      for (let i = 1; i < times.length; i++) {
+        const d = (times[i] - times[i - 1]) / 1000;
+        if (d > 0 && d < bar) bar = d;
+      }
+      if (!Number.isFinite(bar)) bar = 60;
+      const boxes = layoutSeiz(points, seiz, { zoneLabel: label, barSeconds: bar });
+      this.chartManager.setSessionLevels(id, PRICE_SERIES_KEY, [], undefined, boxes, []);
       return;
     }
     const segments = buildSessionLevelSegments(

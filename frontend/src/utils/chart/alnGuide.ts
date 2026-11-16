@@ -29,6 +29,14 @@ export interface SessionBox {
   dashed?: boolean;
   /** Dotted dividers at these times, with a small text above / below each slice (Hour Stats). */
   slices?: { times: number[]; top: string[]; bottom: string[] };
+  /** SEIZ: small label right-aligned inside the box, at its top or bottom edge ("75th"). */
+  edgeLabel?: string;
+  edgeAt?: 'top' | 'bottom';
+  /** SEIZ: outline a filled band (the Stat Zone) and/or draw a dashed line at this price. */
+  outline?: boolean;
+  midline?: number;
+  /** SEIZ: a dotted vertical rule at the box's start, full pane height (the candle open). */
+  rule?: boolean;
 }
 
 export interface AlnPatternStats {
