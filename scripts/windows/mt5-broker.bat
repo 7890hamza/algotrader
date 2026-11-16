@@ -12,8 +12,9 @@ if not exist ".venv-mt5\Scripts\python.exe" (
 set BROKER_PROVIDER=mt5
 set BROKER_REDIS_URL=redis://localhost:6379/0
 set BROKER_SERVICE_PORT=8050
-rem AlgoTrader name = exact MT5 name. Add more like: ES=@EP,NQ=@ENQ
-if "%MT5_SYMBOLS%"=="" set MT5_SYMBOLS=ES=@EP
+rem AlgoTrader name = MT5 name. No MT5 charts need to be open; MT5 just has to be running and
+rem logged in. If a name is wrong for your broker, the bridge looks for the right one itself.
+if "%MT5_SYMBOLS%"=="" set MT5_SYMBOLS=ES=@EP,NQ=@ENQ,MES=@MES,MNQ=@MNQ
 rem AMP's MT5 server clock is UTC. Change only if your broker's server clock is not.
 if "%MT5_SERVER_UTC_OFFSET_MINUTES%"=="" set MT5_SERVER_UTC_OFFSET_MINUTES=0
 rem Refuses to start on a real-money account unless you set this to false.

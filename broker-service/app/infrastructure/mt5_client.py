@@ -120,6 +120,17 @@ class _BarState:
     current: tuple | None = None  # (time, open, high, low, close, volume) as last emitted
 
 
+# Other names brokers use for the same continuous contracts (AMP's MT5 uses CQG codes: ES = @EP).
+SYMBOL_CANDIDATES: dict[str, tuple[str, ...]] = {
+    "ES": ("@EP", "@ES", "EP", "ES"),
+    "NQ": ("@ENQ", "@NQ", "ENQ", "NQ"),
+    "MES": ("@MES", "MES"),
+    "MNQ": ("@MNQ", "MNQ"),
+    "YM": ("@YM", "YM"),
+    "MYM": ("@MYM", "MYM"),
+}
+
+
 class Mt5Client(BrokerPort, MarketDataPort):
     """Read-only MetaTrader 5 adapter implementing the broker ports."""
 
@@ -205,6 +216,36 @@ class Mt5Client(BrokerPort, MarketDataPort):
             account.server,
             account.trade_mode == ACCOUNT_TRADE_MODE_DEMO,
         )
+        self._find_symbols()
+
+    def _find_symbols(self) -> None:
+        """Point every alias at a symbol that exists on this MT5 server.
+
+        No chart has to be open in MT5: the bridge adds each symbol to Market Watch itself.
+        When the configured name does not exist (brokers name continuous contracts
+        differently), try the usual names, then any server symbol starting with them.
+        """
+        mt5 = self._mt5
+        names: list[str] | None = None
+        for alias, wanted in list(self._aliases.items()):
+            if mt5.symbol_info(wanted) is not None:
+                mt5.symbol_select(wanted, True)
+                continue
+            candidates = SYMBOL_CANDIDATES.get(alias, (alias, "@" + alias))
+            found = next((c for c in candidates if mt5.symbol_info(c) is not None), None)
+            if found is None:
+                if names is None:
+                    names = [str(i.name) for i in (mt5.symbols_get() or ())]
+                prefixes = tuple(c.upper() for c in candidates)
+                by_length = sorted(names, key=len)
+                found = next((n for n in by_length if n.upper().startswith(prefixes)), None)
+            if found is None:
+                logger.warning("MT5 has no symbol for %s (tried %s); it won't load", alias, wanted)
+                continue
+            logger.info("MT5 symbol for %s: %s (configured %s not found)", alias, found, wanted)
+            mt5.symbol_select(found, True)
+            self._aliases[alias] = found
+        self._reverse_aliases = {v.upper(): k for k, v in self._aliases.items()}
 
     async def _call(self, fn: Callable[..., Any], *args: Any) -> Any:
         loop = asyncio.get_running_loop()

@@ -126,6 +126,15 @@
         :aria-pressed="chartLayout === 'split'"
         @click="emit('update:chartLayout', 'split')"
       >2 charts</n-button>
+      <n-button
+        size="small"
+        round
+        :type="chartLayout === 'quad' ? 'primary' : 'default'"
+        :secondary="chartLayout !== 'quad'"
+        data-testid="chart-layout-quad"
+        :aria-pressed="chartLayout === 'quad'"
+        @click="emit('update:chartLayout', 'quad')"
+      >4 charts</n-button>
     </div>
 
     <TopBarModals v-if="!remote" />

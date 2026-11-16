@@ -187,4 +187,20 @@ describe('ChartView startup', () => {
       freshWrapper.find('[data-testid="chart-area-mode"]').attributes('data-interaction-mode'),
     ).toBe('pan');
   });
+
+  it('shows four charts in a grid, the extra three opening on NQ, MES and MNQ', async () => {
+    vi.mocked(fetchMarkets).mockResolvedValue([marketA]);
+    localStorage.setItem('algotrader_chart_layout', 'quad');
+
+    const wrapper = mount(ChartView, {
+      global: { stubs: { ChartArea: true, TheTopBar: true, 'chart-area': true, 'the-top-bar': true } },
+    });
+    await flushPromises();
+
+    const frames = wrapper.findAll('iframe');
+    expect(frames.map((f) => new URL(f.attributes('src') ?? '').search)).toEqual([
+      '?pane=2&symbol=NQ', '?pane=3&symbol=MES', '?pane=4&symbol=MNQ',
+    ]);
+    expect(wrapper.find('.chart-grid--quad').exists()).toBe(true);
+  });
 });

@@ -37,7 +37,9 @@ Stop with `scripts\windows\mt5-stack-down.bat` and by closing the bridge window.
 
 ## First run: add the ES Market
 
-In the chart's symbol menu add symbol `ES`, exchange `CME`, min move `0.25`. Then
+In the chart's symbol menu add symbol `ES`, exchange `CME`, min move `0.25` (and the same for
+`NQ`, `MES` and `MNQ`). No chart has to be open in MT5 itself: MT5 only has to be running and
+logged in, and the bridge adds each symbol to Market Watch on its own. Then
 restart ingestion once so it picks up the new Market and backfills history:
 
 ```
@@ -49,7 +51,7 @@ docker compose --env-file config/.env.shared -f docker-compose.yml -f docker-com
 | Variable | Default | Meaning |
 | --- | --- | --- |
 | `BROKER_PROVIDER` | `ctrader` | `mt5` selects this adapter |
-| `MT5_SYMBOLS` | `ES=@EP` | AlgoTrader name = exact MT5 name, comma separated |
+| `MT5_SYMBOLS` | `ES=@EP,NQ=@ENQ,MES=@MES,MNQ=@MNQ` | AlgoTrader name = MT5 name, comma separated; if a name doesn't exist on the server the bridge tries the usual ones (`@NQ`, `MNQ`...) and logs what it picked |
 | `MT5_REQUIRE_DEMO` | `true` | refuse to start on a real-money account |
 | `MT5_SERVER_UTC_OFFSET_MINUTES` | `0` | MT5 server clock minus UTC (AMP's server is UTC) |
 | `MT5_VOLUME_SOURCE` | `real` | `real` exchange volume or `tick` count |

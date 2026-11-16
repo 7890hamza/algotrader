@@ -93,10 +93,13 @@ class Mt5Settings:
             poll_interval_seconds=poll,
             server_utc_offset_minutes=_read_int("MT5_SERVER_UTC_OFFSET_MINUTES", 0),
             volume_source=volume,  # type: ignore[arg-type]
-            symbol_aliases=parse_symbol_aliases(_read_str("MT5_SYMBOLS", "ES=@EP")),
+            symbol_aliases=parse_symbol_aliases(_read_str("MT5_SYMBOLS", DEFAULT_MT5_SYMBOLS)),
             history_settle_attempts=max(1, _read_int("MT5_HISTORY_SETTLE_ATTEMPTS", 6)),
             trading_enabled=_read_bool("MT5_TRADING_ENABLED", False),
         )
+
+
+DEFAULT_MT5_SYMBOLS = "ES=@EP,NQ=@ENQ,MES=@MES,MNQ=@MNQ"
 
 
 def parse_symbol_aliases(raw: str) -> dict[str, str]:

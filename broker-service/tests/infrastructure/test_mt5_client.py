@@ -169,6 +169,16 @@ class Mt5ClientTests(unittest.IsolatedAsyncioTestCase):
         names = [d.symbol_name for d in await client.list_symbols(AccountId(1))]
         self.assertEqual(names, ["ES", "EURUSD"])  # "@EP" is exposed only as its alias
 
+    async def test_finds_symbols_when_the_configured_name_is_wrong(self) -> None:
+        fake = FakeMt5()
+        fake.symbols_get = lambda: [SimpleNamespace(name="@EP"), SimpleNamespace(name="@MNQZ26")]
+        aliases = {"ES": "@ES", "MNQ": "MNQ1!", "NQ": "@ENQ"}
+        client = await connected_client(fake, symbol_aliases=aliases)
+        self.assertEqual(client._aliases["ES"], "@EP")       # from the usual names
+        self.assertEqual(client._aliases["MNQ"], "@MNQZ26")  # from the server's list
+        self.assertEqual(client._aliases["NQ"], "@ENQ")      # not on this server: left as is
+        self.assertIn("@EP", fake.selected)  # added to Market Watch, no chart needed
+
     async def test_history_bounds_offset_and_volume(self) -> None:
         fake = FakeMt5()
         # Server clock is UTC+2h; bars at server 02:00..02:04 are UTC 00:00..00:04.

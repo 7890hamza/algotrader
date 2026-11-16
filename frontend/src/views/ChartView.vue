@@ -5,20 +5,21 @@
       v-model:chart-interaction-mode="chartInteractionMode"
       :chart-layout="chartLayout"
       :show-layout="true"
-      :remote="activePane === '2' && isSplit ? secondState : null"
+      :remote="activePane !== '1' && isMulti ? (paneStates[activePane] ?? null) : null"
       @update:chart-layout="setChartLayout"
-      @remote-modal="(name: string) => sendToSecond({ type: 'open-modal', name })"
-      @remote-timeframe="(value: string) => sendToSecond({ type: 'set-timeframe', value })"
+      @remote-modal="(name: string) => sendToActive({ type: 'open-modal', name })"
+      @remote-timeframe="(value: string) => sendToActive({ type: 'set-timeframe', value })"
     />
     <TopBarModals v-else />
     <div class="chart-panes">
+      <div class="chart-grid" :class="`chart-grid--${isSecondPane ? 'single' : chartLayout}`">
       <section
         class="chart-pane"
-        :class="{ 'chart-pane--active': isSplit && activePane === '1' }"
+        :class="{ 'chart-pane--active': isMulti && activePane === '1' }"
         data-testid="first-chart"
         @pointerdown.capture="activate"
       >
-        <div v-if="isSplit || isSecondPane" class="pane-label" data-testid="pane-label">
+        <div v-if="isMulti || isSecondPane" class="pane-label" data-testid="pane-label">
           <span>{{ currentMarketStore.symbol ?? '—' }}</span>
           <span class="pane-label__tf">{{ currentTimeframeStore.value }}</span>
         </div>
@@ -30,14 +31,16 @@
         />
       </section>
       <iframe
-        v-if="isSplit"
-        ref="secondFrame"
+        v-for="pane in extraPanes"
+        :key="pane"
+        :ref="(el) => setFrame(pane, el)"
         class="chart-pane chart-pane--second"
-        :class="{ 'chart-pane--active': activePane === '2' }"
-        :src="secondSrc"
-        title="Second chart"
-        data-testid="second-chart"
+        :class="{ 'chart-pane--active': activePane === pane }"
+        :src="paneSrc(pane)"
+        :title="`Chart ${pane}`"
+        :data-testid="pane === '2' ? 'second-chart' : `chart-${pane}`"
       />
+      </div>
       <GamePlanPanel v-if="!isSecondPane && gamePlanStore.visible" />
       <MemoryDomPanel v-if="!isSecondPane && domStore.visible" />
     </div>
@@ -61,12 +64,18 @@ import { useCurrentTimeframeStore } from '@/stores/currentTimeframeStore';
 import { useDomStore } from '@/stores/domStore';
 import { useGamePlanStore } from '@/stores/gamePlanStore';
 import { useMarketsStore } from '@/stores/marketsStore';
+import { STORAGE_KEYS } from '@/utils/localStorage';
 import { useModalStore } from '@/stores/modalStore';
 import { isTimeframeCode } from '@/types/contracts';
 import {
   CHART_LAYOUT_KEY,
+  CHART_LAYOUTS,
+  EXTRA_PANES,
   IS_SECOND_PANE,
-  secondPaneUrl,
+  PANE_DEFAULT_SYMBOL,
+  PANE_SYMBOL,
+  paneHasOwnSymbol,
+  paneUrl,
   type ChartLayout,
 } from '@/utils/chartPane';
 import { postPaneMessage, readPaneMessage, type PaneMessage } from '@/utils/paneBridge';
@@ -84,25 +93,34 @@ const domStore = useDomStore();
 if (!IS_SECOND_PANE) watch(() => currentMarketStore.symbol, (s) => gamePlanStore.setSymbol(s ?? null), { immediate: true });
 const chartInteractionMode = ref<ChartInteractionMode>(DEFAULT_CHART_INTERACTION_MODE);
 const isSecondPane = IS_SECOND_PANE;
-const secondSrc = secondPaneUrl();
-const secondFrame = ref<HTMLIFrameElement | null>(null);
-const activePane = ref<'1' | '2'>('1');
-const secondState = ref<{ symbol: string | null; timeframe: string }>({ symbol: null, timeframe: '' });
+const frames: Record<string, HTMLIFrameElement | null> = {};
+const activePane = ref<string>('1');
+const paneStates = ref<Record<string, { symbol: string | null; timeframe: string }>>({});
 
 function readLayout(): ChartLayout {
   try {
-    return localStorage.getItem(CHART_LAYOUT_KEY) === 'split' ? 'split' : 'single';
+    const saved = localStorage.getItem(CHART_LAYOUT_KEY);
+    return (CHART_LAYOUTS as readonly string[]).includes(saved ?? '') ? (saved as ChartLayout) : 'single';
   } catch {
     return 'single';
   }
 }
 
 const chartLayout = ref<ChartLayout>(isSecondPane ? 'single' : readLayout());
-const isSplit = computed(() => !isSecondPane && chartLayout.value === 'split');
+const isMulti = computed(() => !isSecondPane && chartLayout.value !== 'single');
+const extraPanes = computed(() => (isSecondPane ? [] : EXTRA_PANES[chartLayout.value]));
+
+function paneSrc(pane: string): string {
+  return paneUrl(pane, chartLayout.value === 'quad' ? PANE_DEFAULT_SYMBOL[pane] : undefined);
+}
+
+function setFrame(pane: string, el: unknown): void {
+  frames[pane] = el instanceof HTMLIFrameElement ? el : null;
+}
 
 function setChartLayout(layout: ChartLayout): void {
   chartLayout.value = layout;
-  if (layout === 'single') activePane.value = '1';
+  if (!EXTRA_PANES[layout].includes(activePane.value)) activePane.value = '1';
   try {
     localStorage.setItem(CHART_LAYOUT_KEY, layout);
   } catch {
@@ -110,8 +128,16 @@ function setChartLayout(layout: ChartLayout): void {
   }
 }
 
-function sendToSecond(message: PaneMessage): void {
-  postPaneMessage(secondFrame.value?.contentWindow, message);
+function sendToActive(message: PaneMessage): void {
+  postPaneMessage(frames[activePane.value]?.contentWindow, message);
+}
+
+function sendToAll(message: PaneMessage): void {
+  for (const pane of extraPanes.value) postPaneMessage(frames[pane]?.contentWindow, message);
+}
+
+function paneOf(source: MessageEventSource | null): string | null {
+  return extraPanes.value.find((pane) => frames[pane]?.contentWindow === source) ?? null;
 }
 
 /** A click on this chart makes it the one the top bar works on. */
@@ -139,11 +165,13 @@ function onMessage(event: MessageEvent): void {
   const message = readPaneMessage(event);
   if (!message) return;
   if (!isSecondPane) {
-    if (message.type === 'activate') activePane.value = '2';
+    const pane = paneOf(event.source);
+    if (!pane) return;
+    if (message.type === 'activate') activePane.value = pane;
     if (message.type === 'placed') chartInteractionMode.value = 'pan';
     if (message.type === 'state') {
-      secondState.value = { symbol: message.symbol, timeframe: message.timeframe };
-      sendToSecond({ type: 'set-interaction-mode', mode: chartInteractionMode.value });
+      paneStates.value = { ...paneStates.value, [pane]: { symbol: message.symbol, timeframe: message.timeframe } };
+      postPaneMessage(frames[pane]?.contentWindow, { type: 'set-interaction-mode', mode: chartInteractionMode.value });
     }
     return;
   }
@@ -157,7 +185,7 @@ function onMessage(event: MessageEvent): void {
 }
 
 watch(chartInteractionMode, (mode) => {
-  if (isSplit.value) sendToSecond({ type: 'set-interaction-mode', mode });
+  if (isMulti.value) sendToAll({ type: 'set-interaction-mode', mode });
 });
 watch(() => [currentMarketStore.symbol, currentTimeframeStore.value], reportState);
 
@@ -172,6 +200,16 @@ async function fetchMarketsAndInitCurrent(): Promise<void> {
 
   if (marketsStore.all.length === 0) {
     return;
+  }
+
+  // A new chart in the 4-chart grid opens on its own market (NQ, MES, MNQ) when that market exists.
+  const paneSymbol = PANE_SYMBOL?.toUpperCase();
+  if (isSecondPane && paneSymbol && !paneHasOwnSymbol(STORAGE_KEYS.CURRENT_MARKET)) {
+    const wanted = marketsStore.all.find((m) => m.symbol.toUpperCase() === paneSymbol);
+    if (wanted) {
+      currentMarketStore.setMarket(wanted);
+      return;
+    }
   }
 
   if (currentMarketStore.isValid(marketsStore.all)) {
@@ -202,6 +240,25 @@ void initializeChartView();
   flex: 1;
   gap: 8px;
   min-height: 0;
+}
+
+.chart-grid {
+  display: grid;
+  flex: 1;
+  gap: 8px;
+  min-width: 0;
+  min-height: 0;
+  grid-template-columns: 1fr;
+  grid-template-rows: 1fr;
+}
+
+.chart-grid--split {
+  grid-template-columns: 1fr 1fr;
+}
+
+.chart-grid--quad {
+  grid-template-columns: 1fr 1fr;
+  grid-template-rows: 1fr 1fr;
 }
 
 .chart-pane {
