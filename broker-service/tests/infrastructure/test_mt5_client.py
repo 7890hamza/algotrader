@@ -4,7 +4,7 @@ import importlib.util
 import sys
 import time
 import unittest
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -14,7 +14,7 @@ from app.api.routers import market_data
 from app.application.services import MarketDataService
 from app.domain.models import Tick, Trendbar
 from app.domain.value_objects import AccountId, Timeframe
-from app.infrastructure.mt5_client import Mt5Client, TradingDisabledError
+from app.infrastructure.mt5_client import Mt5Client, TradingDisabledError, front_month
 from app.infrastructure.stream_registry import StreamRegistry
 from app.infrastructure.trendbar_stream_registry import TrendbarStreamRegistry
 from app.settings import Mt5Settings, Settings, parse_symbol_aliases
@@ -171,13 +171,21 @@ class Mt5ClientTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_finds_symbols_when_the_configured_name_is_wrong(self) -> None:
         fake = FakeMt5()
-        fake.symbols_get = lambda: [SimpleNamespace(name="@EP"), SimpleNamespace(name="@MNQZ26")]
+        listed = ["@EP", "MNQZ19", "MNQH27", "MNQZ26", "MNQM27"]
+        fake.symbols_get = lambda: [SimpleNamespace(name=n) for n in listed]
         aliases = {"ES": "@ES", "MNQ": "MNQ1!", "NQ": "@ENQ"}
         client = await connected_client(fake, symbol_aliases=aliases)
         self.assertEqual(client._aliases["ES"], "@EP")       # from the usual names
-        self.assertEqual(client._aliases["MNQ"], "@MNQZ26")  # from the server's list
+        self.assertEqual(client._aliases["MNQ"], front_month(listed, "MNQ", date.today()))
+        self.assertIn(client._aliases["MNQ"], ("MNQZ26", "MNQH27"))  # front month, not MNQZ19
         self.assertEqual(client._aliases["NQ"], "@ENQ")      # not on this server: left as is
         self.assertIn("@EP", fake.selected)  # added to Market Watch, no chart needed
+
+    def test_front_month_rolls_eight_days_before_expiry(self) -> None:
+        names = ["MNQZ26", "MNQH27", "MNQZ19", "MNQ"]
+        self.assertEqual(front_month(names, "MNQ", date(2026, 11, 16)), "MNQZ26")  # expires Dec 18
+        self.assertEqual(front_month(names, "MNQ", date(2026, 12, 11)), "MNQH27")  # roll week
+        self.assertIsNone(front_month(["ESZ19"], "MNQ", date(2026, 11, 16)))
 
     async def test_history_bounds_offset_and_volume(self) -> None:
         fake = FakeMt5()

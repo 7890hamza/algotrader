@@ -163,3 +163,46 @@ export function dashCell(code: number | null): string {
   if (code >= 100) return code === 100 ? '<50 Ext' : `${code - 100} Ext`;
   return code === 0 ? '–' : `${code} Int`;
 }
+
+/** One timeframe of the candle strip: band codes and the candle in the last candle's range. */
+export interface SeizStripCell {
+  key: string;
+  label: string;
+  hi: number | null;
+  lo: number | null;
+  pg: number | null;
+  o: number | null;
+  h: number | null;
+  l: number | null;
+  c: number | null;
+}
+
+const SHORT_TFS = ['15m', '30m', '1h', '2h'];
+
+/** Brightness of a wick that broke out: rarer bands are brighter. */
+export function seizShade(code: number | null): number {
+  const p = code === null ? 0 : code % 100;
+  return p >= 99 ? 1 : p >= 85 ? 0.9 : p >= 75 ? 0.65 : p >= 50 ? 0.55 : 0.45;
+}
+
+/**
+ * The one sentence under the strip: short timeframes stretched to the 85th+ outside their last
+ * candle on one side, and what the daily is doing on that side. Null when nothing lines up.
+ */
+export function seizPairing(cells: readonly SeizStripCell[]): string | null {
+  for (const side of ['lo', 'hi'] as const) {
+    const hot = cells.filter((c) => SHORT_TFS.includes(c.key) && (c[side] ?? 0) >= 185);
+    if (!hot.length) continue;
+    const best = Math.max(...hot.map((c) => (c[side] ?? 0) - 100));
+    const names = hot.map((c) => c.label);
+    const list = names.length > 1 ? `${names.slice(0, -1).join(', ')} and ${names[names.length - 1]}` : names[0];
+    const where = side === 'lo' ? 'below their last lows' : 'above their last highs';
+    const day = cells.find((c) => c.key === '1d');
+    const code = day?.[side] ?? 0;
+    const daily = code >= 100
+      ? `the daily broke its last ${side === 'lo' ? 'low' : 'high'} too`
+      : `the daily is only a normal ${side === 'lo' ? 'dip' : 'push'}`;
+    return `${list} stretched to the ${best}th ${where}, while ${daily}`;
+  }
+  return null;
+}

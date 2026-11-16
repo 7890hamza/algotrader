@@ -44,7 +44,9 @@ TF_MINUTES = {"15m": 15, "30m": 30, "1d": 1380, "1w": 6900} | {f"{h}h": 60 * h f
 
 ZONE_OUT = ["start", "end", "open", "ph", "pl"] + [f"{z}{p}" for z in ZONES for p in PCTS] + [
     "st_h_lo", "st_h_mid", "st_h_hi", "st_l_hi", "st_l_mid", "st_l_lo"]
-DASH_OUT = [f"d_{tf}_{k}" for tf in TIMEFRAMES for k in ("hi", "lo", "pg")]
+# per timeframe: band codes, progress, and the candle itself (open / high / low / now) measured in
+# the last candle's range (0 = its low, 1 = its high) for the dashboard's candle strip
+DASH_OUT = [f"d_{tf}_{k}" for tf in TIMEFRAMES for k in ("hi", "lo", "pg", "o", "h", "l", "c")]
 OUTPUTS = ZONE_OUT + DASH_OUT
 COL = {name: i for i, name in enumerate(OUTPUTS)}
 DEFAULT_TF = "1h"
@@ -120,6 +122,7 @@ def seiz(
     stat_zone: bool = False,
     dashboard: bool = True,
     tick: float = 0.25,
+    close: np.ndarray | None = None,
 ) -> np.ndarray:
     n = len(epoch_ms)
     out = np.full((n, len(OUTPUTS)), np.nan, dtype=np.float64)
@@ -177,6 +180,10 @@ def seiz(
             out[ok2, COL[f"d_{tf}_hi"]] = hi_code[ok2]
             out[ok2, COL[f"d_{tf}_lo"]] = lo_code[ok2]
             out[ok2, COL[f"d_{tf}_pg"]] = np.round(progress[ok2])
+            span = np.where(ph2 - pl2 > 0, ph2 - pl2, np.nan)
+            now = np.asarray(close if close is not None else open_, dtype=float)
+            for k, v in (("o", o2), ("h", hi2), ("l", lo2), ("c", now)):
+                out[ok2, COL[f"d_{tf}_{k}"]] = np.round((v - pl2) / span, 3)[ok2]
     return out
 
 
@@ -215,6 +222,7 @@ class SEIZ(IndicatorBase):
             if field not in data.fields:
                 raise KeyError(f"Field not found: {field}")
             idx[field] = int(np.where(data.fields == field)[0][0])
+        ci = int(np.where(data.fields == "close")[0][0]) if "close" in data.fields else None
         epoch_ms = to_epoch_ms(data.time)
         n_time, n_assets = data.data.shape[0], data.data.shape[1]
         out = np.full((n_time, n_assets, len(OUTPUTS)), np.nan, dtype=np.float64)
@@ -224,6 +232,7 @@ class SEIZ(IndicatorBase):
                 market=market_for(data.assets[a], p["market"]), zone_tf=parse_tf(p["zone_tf"]),
                 auto_switch=_on(p["auto_switch"]), stat_zone=_on(p["stat_zone"]),
                 dashboard=_on(p["dashboard"]), tick=float(p["tick"]),
+                close=data.data[:, a, ci] if ci is not None else None,
             )
         return Tensor(
             data=out,

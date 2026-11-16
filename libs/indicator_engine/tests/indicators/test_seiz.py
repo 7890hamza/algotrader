@@ -59,6 +59,9 @@ def test_bands_switch_from_internal_to_external():
     assert out[j, COL["d_1h_hi"]] >= 100              # dashboard: external high
     assert 0 < out[j, COL["d_1h_pg"]] <= 100
     assert out[j, COL["end"]] - out[j, COL["start"]] == 3_600_000
+    # candle strip: the 1h candle measured in the 9:00 candle's range; its high broke above (> 1)
+    assert out[j, COL["d_1h_h"]] > 1 and 0 <= out[j, COL["d_1h_o"]] <= 1
+    assert out[j, COL["d_1h_l"]] <= out[j, COL["d_1h_o"]] <= out[j, COL["d_1h_h"]]
 
 
 def test_batch_shape_and_options():

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { dashCell, layoutSeiz, readSeizGuide, type SeizGuide } from '@/utils/chart/seiz';
+import { dashCell, layoutSeiz, readSeizGuide, type SeizGuide, seizPairing, seizShade } from '@/utils/chart/seiz';
 
 const guide = {
   kind: 'seiz',
@@ -65,5 +65,19 @@ describe('SEIZ layout', () => {
     expect(dashCell(100)).toBe('<50 Ext');
     expect(dashCell(75)).toBe('75 Int');
     expect(dashCell(0)).toBe('–');
+  });
+});
+
+describe('seiz candle strip', () => {
+  const cell = (key: string, label: string, hi: number, lo: number) => ({ key, label, hi, lo, pg: 50, o: 0.5, h: 0.8, l: 0.2, c: 0.4 });
+  it('names the short timeframes stretched past their last candle and what the daily is doing', () => {
+    const cells = [cell('15m', '15m', 0, 175), cell('30m', '30m', 50, 185), cell('1h', '1h', 0, 185), cell('2h', '2h', 0, 199), cell('1d', '1D', 0, 50)];
+    expect(seizPairing(cells)).toBe('30m, 1h and 2h stretched to the 99th below their last lows, while the daily is only a normal dip');
+    expect(seizPairing([cell('1h', '1h', 185, 0), cell('1d', '1D', 150, 0)])).toBe('1h stretched to the 85th above their last highs, while the daily broke its last high too');
+    expect(seizPairing([cell('1h', '1h', 150, 175)])).toBeNull();
+  });
+  it('brightens rarer breakouts', () => {
+    expect(seizShade(199)).toBeGreaterThan(seizShade(185));
+    expect(seizShade(185)).toBeGreaterThan(seizShade(150));
   });
 });

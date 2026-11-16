@@ -31,7 +31,7 @@
       @click="domStore.toggle()"
     >DOM</n-button>
 
-    <span v-if="remote" class="active-chart-note" data-testid="active-chart-note">Right chart</span>
+    <span v-if="remote" class="active-chart-note" data-testid="active-chart-note">{{ remote.label ?? 'Right chart' }}</span>
 
     <div class="chart-interaction-controls" role="group" aria-label="Chart interaction mode">
       <n-button
@@ -167,7 +167,7 @@ const props = withDefaults(defineProps<{
   chartLayout?: ChartLayout;
   showLayout?: boolean;
   /** The active chart is the second one: its symbol and timeframe, and actions go to it. */
-  remote?: { symbol: string | null; timeframe: string } | null;
+  remote?: { symbol: string | null; timeframe: string; label?: string } | null;
 }>(), {
   chartInteractionMode: DEFAULT_CHART_INTERACTION_MODE,
   chartLayout: 'single',

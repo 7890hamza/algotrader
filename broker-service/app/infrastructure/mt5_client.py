@@ -28,7 +28,7 @@ import uuid
 import zlib
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 from decimal import Decimal
 from typing import Any, AsyncIterator, Awaitable, Callable, Mapping
 
@@ -129,6 +129,33 @@ SYMBOL_CANDIDATES: dict[str, tuple[str, ...]] = {
     "YM": ("@YM", "YM"),
     "MYM": ("@MYM", "MYM"),
 }
+
+
+MONTH_CODES = "FGHJKMNQUVXZ"
+ROLL_DAYS = 8  # index futures roll about 8 days before the 3rd-Friday expiry
+
+
+def _third_friday(year: int, month: int) -> date:
+    first = date(year, month, 1)
+    return first + timedelta(days=(4 - first.weekday()) % 7 + 14)
+
+
+def front_month(names: list[str], root: str, today: date) -> str | None:
+    """The contract to trade now among names like MNQZ26 / MNQH27 (root + month code + year).
+
+    The nearest one that is more than ROLL_DAYS from its 3rd-Friday expiry.
+    """
+    best: tuple[date, str] | None = None
+    for name in names:
+        tail = name[len(root):] if name.upper().startswith(root.upper()) else ""
+        if len(tail) != 3 or tail[0].upper() not in MONTH_CODES or not tail[1:].isdigit():
+            continue
+        expiry = _third_friday(2000 + int(tail[1:]), MONTH_CODES.index(tail[0].upper()) + 1)
+        if expiry - timedelta(days=ROLL_DAYS) <= today:
+            continue
+        if best is None or expiry < best[0]:
+            best = (expiry, name)
+    return best[1] if best else None
 
 
 class Mt5Client(BrokerPort, MarketDataPort):
@@ -234,11 +261,12 @@ class Mt5Client(BrokerPort, MarketDataPort):
             candidates = SYMBOL_CANDIDATES.get(alias, (alias, "@" + alias))
             found = next((c for c in candidates if mt5.symbol_info(c) is not None), None)
             if found is None:
+                # No continuous symbol: use the front-month contract (e.g. MNQZ26).
                 if names is None:
                     names = [str(i.name) for i in (mt5.symbols_get() or ())]
-                prefixes = tuple(c.upper() for c in candidates)
-                by_length = sorted(names, key=len)
-                found = next((n for n in by_length if n.upper().startswith(prefixes)), None)
+                today = datetime.now(timezone.utc).date()
+                roots = dict.fromkeys(c.lstrip("@") for c in candidates)
+                found = next((f for r in roots if (f := front_month(names, r, today))), None)
             if found is None:
                 logger.warning("MT5 has no symbol for %s (tried %s); it won't load", alias, wanted)
                 continue

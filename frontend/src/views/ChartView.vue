@@ -5,7 +5,7 @@
       v-model:chart-interaction-mode="chartInteractionMode"
       :chart-layout="chartLayout"
       :show-layout="true"
-      :remote="activePane !== '1' && isMulti ? (paneStates[activePane] ?? null) : null"
+      :remote="remote"
       @update:chart-layout="setChartLayout"
       @remote-modal="(name: string) => sendToActive({ type: 'open-modal', name })"
       @remote-timeframe="(value: string) => sendToActive({ type: 'set-timeframe', value })"
@@ -63,6 +63,7 @@ import { useCurrentMarketStore } from '@/stores/currentMarketStore';
 import { useCurrentTimeframeStore } from '@/stores/currentTimeframeStore';
 import { useDomStore } from '@/stores/domStore';
 import { useGamePlanStore } from '@/stores/gamePlanStore';
+import { createMarket } from '@/api/marketClient';
 import { useMarketsStore } from '@/stores/marketsStore';
 import { STORAGE_KEYS } from '@/utils/localStorage';
 import { useModalStore } from '@/stores/modalStore';
@@ -108,7 +109,16 @@ function readLayout(): ChartLayout {
 
 const chartLayout = ref<ChartLayout>(isSecondPane ? 'single' : readLayout());
 const isMulti = computed(() => !isSecondPane && chartLayout.value !== 'single');
-const extraPanes = computed(() => (isSecondPane ? [] : EXTRA_PANES[chartLayout.value]));
+const marketsReady = ref(false);
+// Extra charts load only once the markets they open on exist (see ensureGridMarkets).
+const extraPanes = computed(() => (isSecondPane || !marketsReady.value ? [] : EXTRA_PANES[chartLayout.value]));
+const PANE_NAMES: Record<string, string> = { '2': 'Top right chart', '3': 'Bottom left chart', '4': 'Bottom right chart' };
+/** While another chart is selected the top bar works on it (symbol, timeframe, indicators). */
+const remote = computed(() => {
+  if (!isMulti.value || activePane.value === '1') return null;
+  const state = paneStates.value[activePane.value] ?? { symbol: null, timeframe: '' };
+  return { ...state, label: chartLayout.value === 'split' ? 'Right chart' : PANE_NAMES[activePane.value] };
+});
 
 function paneSrc(pane: string): string {
   return paneUrl(pane, chartLayout.value === 'quad' ? PANE_DEFAULT_SYMBOL[pane] : undefined);
@@ -120,6 +130,7 @@ function setFrame(pane: string, el: unknown): void {
 
 function setChartLayout(layout: ChartLayout): void {
   chartLayout.value = layout;
+  if (layout === 'quad') void ensureGridMarkets();
   if (!EXTRA_PANES[layout].includes(activePane.value)) activePane.value = '1';
   try {
     localStorage.setItem(CHART_LAYOUT_KEY, layout);
@@ -219,8 +230,42 @@ async function fetchMarketsAndInitCurrent(): Promise<void> {
   currentMarketStore.setMarket(marketsStore.all[0]);
 }
 
+/**
+ * The 4-chart grid opens on NQ, MES and MNQ: add any that aren't in the symbol list yet, set up
+ * like the main chart's market (same exchange and type, 0.25 tick), so the MT5 feed loads them.
+ */
+async function ensureGridMarkets(): Promise<void> {
+  if (isSecondPane) return;
+  try {
+    const have = new Set(marketsStore.all.map((m) => m.symbol.toUpperCase()));
+    const missing = Object.values(PANE_DEFAULT_SYMBOL).filter((sym) => !have.has(sym));
+    const template = marketsStore.all.find((m) => m.symbol === currentMarketStore.symbol) ?? marketsStore.all[0];
+    if (missing.length && template) {
+      for (const symbol of missing) {
+        await createMarket({
+          symbol,
+          exchange: template.exchange,
+          market_type: template.market_type,
+          min_move: 0.25,
+          timezone: template.timezone ?? 'UTC',
+        });
+      }
+      await marketsStore.fetch();
+    }
+  } catch (error) {
+    console.error('Could not add the 4-chart markets', error);
+  } finally {
+    marketsReady.value = true;
+  }
+}
+
 async function initializeChartView(): Promise<void> {
-  await fetchMarketsAndInitCurrent();
+  try {
+    await fetchMarketsAndInitCurrent();
+  } finally {
+    if (chartLayout.value === 'quad') await ensureGridMarkets();
+    marketsReady.value = true;
+  }
 }
 
 void initializeChartView();
@@ -253,16 +298,18 @@ void initializeChartView();
 }
 
 .chart-grid--split {
-  grid-template-columns: 1fr 1fr;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
 }
 
 .chart-grid--quad {
-  grid-template-columns: 1fr 1fr;
-  grid-template-rows: 1fr 1fr;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  grid-template-rows: minmax(0, 1fr) minmax(0, 1fr);
 }
 
 .chart-pane {
   position: relative;
+  width: 100%;
+  height: 100%;
   display: flex;
   flex-direction: column;
   flex: 1 1 0;
