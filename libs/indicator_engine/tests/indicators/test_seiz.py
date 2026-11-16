@@ -1,6 +1,5 @@
 import numpy as np
 import pandas as pd
-
 from indicator_engine.core.bars import BarTensor
 from indicator_engine.indicators.seiz import COL, OUTPUTS, SEIZ, TABLES, market_for, parse_tf, seiz
 from indicator_engine.indicators.seiz_frames import TIMEFRAMES, frame_keys

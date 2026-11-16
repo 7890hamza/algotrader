@@ -79,10 +79,10 @@ def _warmup(params: Dict) -> int:
     return math.ceil(need / bar)
 
 
-def _candles(local: np.ndarray, valid: np.ndarray, tf: str, o, h, l):
+def _candles(local: np.ndarray, valid: np.ndarray, tf: str, o, h, lo):
     """Per bar: candle start / end (local ms), candle open, prior high / low, running high / low."""
     key, start, end = frame_keys(local, tf)
-    df = pd.DataFrame({"k": key, "o": o, "h": h, "l": l})
+    df = pd.DataFrame({"k": key, "o": o, "h": h, "l": lo})
     df.loc[~valid, ["o", "h", "l"]] = np.nan
     g = df.groupby("k", sort=False)
     first_o = g["o"].transform("first").to_numpy()
