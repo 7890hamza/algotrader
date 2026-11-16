@@ -51,6 +51,7 @@ import type { SessionBox, SessionTag } from './alnGuide';
 import type { CandleMark, MaruMark, NearbyLevel } from './engulfing';
 import type { RangeBar } from './rangeBar';
 import type { RetraceLayer } from './retrace';
+import type { CurveLine } from './fmp';
 
 export type ChartSeriesType =
   | 'line'
@@ -492,6 +493,7 @@ export class ChartManager {
     marus: readonly MaruMark[] = [],
     rangeBar: RangeBar | null = null,
     retrace: RetraceLayer | null = null,
+    curves: readonly CurveLine[] = [],
   ): boolean {
     const seriesInfo = this.series.get(seriesKey);
     if (!seriesInfo) {
@@ -508,6 +510,7 @@ export class ChartManager {
         existing.primitive.setMarus(marus);
         existing.primitive.setRangeBar(rangeBar);
         existing.primitive.setRetrace(retrace);
+        existing.primitive.setCurves(curves);
         existing.primitive.setSegments(segments);
         return true;
       }
@@ -521,6 +524,7 @@ export class ChartManager {
       primitive.setMarus(marus);
       primitive.setRangeBar(rangeBar);
       primitive.setRetrace(retrace);
+      primitive.setCurves(curves);
       if (precision !== undefined) primitive.setPrecision(precision);
       seriesInfo.series.attachPrimitive(primitive);
       this.sessionLevelPrimitives.set(id, { seriesKey, series: seriesInfo.series, primitive });

@@ -16,6 +16,7 @@ import type {
 import type { SessionBox, SessionTag } from './alnGuide';
 import { HoverCardRenderer } from './hoverCard';
 import { type RangeBar, RangeBarRenderer } from './rangeBar';
+import { type CurveLine, CurveRenderer } from './fmp';
 import { type RetraceLayer, RetraceRenderer } from './retrace';
 import { DEFAULT_CHART_TIME_ZONE } from './chartTimeZone';
 import { BEAR_COLOR, BULL_COLOR, type CandleMark, type MaruMark, shortLevelName } from './engulfing';
@@ -667,6 +668,18 @@ class RetracePaneView implements IPrimitivePaneView {
   }
 }
 
+class CurvePaneView implements IPrimitivePaneView {
+  constructor(private readonly primitive: SessionLevelsPrimitive) {}
+
+  zOrder(): PrimitivePaneViewZOrder {
+    return 'normal';
+  }
+
+  renderer(): IPrimitivePaneRenderer | null {
+    return this.primitive.createCurveRenderer();
+  }
+}
+
 class HoverCardPaneView implements IPrimitivePaneView {
   constructor(private readonly primitive: SessionLevelsPrimitive) {}
 
@@ -706,6 +719,7 @@ export class SessionLevelsPrimitive implements ISeriesPrimitive<Time> {
     new CandleMarksPaneView(this),
     new RangeBarPaneView(this),
     new RetracePaneView(this),
+    new CurvePaneView(this),
     new HoverCardPaneView(this),
   ];
   private attachedParams: SeriesAttachedParameter<Time, SeriesType> | null = null;
@@ -716,6 +730,7 @@ export class SessionLevelsPrimitive implements ISeriesPrimitive<Time> {
   private marus: MaruMark[] = [];
   private rangeBar: RangeBar | null = null;
   private retrace: RetraceLayer | null = null;
+  private curves: CurveLine[] = [];
   private hoverX: number | null = null;
   private hoverY: number | null = null;
   private readonly onCrosshairMove = (param: MouseEventParams<Time>): void => {
@@ -766,6 +781,32 @@ export class SessionLevelsPrimitive implements ISeriesPrimitive<Time> {
   setRetrace(layer: RetraceLayer | null): void {
     this.retrace = layer;
     this.attachedParams?.requestUpdate();
+  }
+
+  setCurves(curves: readonly CurveLine[]): void {
+    this.curves = [...curves];
+    this.attachedParams?.requestUpdate();
+  }
+
+  createCurveRenderer(): IPrimitivePaneRenderer | null {
+    const params = this.attachedParams;
+    if (!params || this.curves.length === 0) return null;
+    const xAt = (time: number): number | null => {
+      const future = this.futureTimeToX(Number.POSITIVE_INFINITY, time);
+      if (future !== null) return future;
+      const x = this.timeToX(time);
+      return x === null ? null : Number(x);
+    };
+    const drawn = this.curves.map((c) => ({
+      color: c.color,
+      width: c.width,
+      smooth: c.smooth,
+      pts: c.points
+        .map((p) => ({ x: xAt(p.time), y: params.series.priceToCoordinate(p.price) }))
+        .filter((p): p is { x: number; y: Coordinate } => p.x !== null && p.y !== null)
+        .map((p) => ({ x: p.x, y: Number(p.y) })),
+    }));
+    return new CurveRenderer(drawn);
   }
 
   private hasHoverCards(): boolean {

@@ -30,6 +30,7 @@ from .indicators import (
     AlnSDEV,
     MtfSDEV,
     SEIZ,
+    FMP,
     SessionSDEV,
 )
 
@@ -58,6 +59,7 @@ def _create_registry() -> IndicatorRegistry:
             AlnSDEV(),
             MtfSDEV(),
             SEIZ(),
+            FMP(),
         ]
     )
     try:

@@ -23,6 +23,7 @@ INDICATOR_MAP: dict[int, str] = {
     15: "aln_sdev",
     16: "mtf_sdev",
     17: "seiz",
+    18: "fmp",
 }
 
 

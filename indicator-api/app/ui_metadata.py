@@ -508,6 +508,27 @@ def _seiz_metadata() -> dict:
     return {"overlay": True, "outputs": outputs, "guide": guide}
 
 
+def _fmp_metadata() -> dict:
+    """Fractal Manipulation Projections draws its own rails (frontend utils/chart/fmp.ts)."""
+    from indicator_engine.indicators.fmp import OUTPUTS, SLICES
+
+    outputs = {k: {"type": "data", "label": k} for k in OUTPUTS}
+    guide = {
+        "kind": "fmp",
+        "source": "NQ / ES 1-minute, 2020-2026",
+        "slices": list(SLICES),
+        "open_color": "#3B82F6",
+        "up_color": "#9AA4B2",
+        "down_color": "#9AA4B2",
+        "odds": {
+            "0.5": "Reached in about 2 of 3 hours",
+            "1": "Reached in about 1 of 4 hours",
+            "1.5": "Reached in about 1 of 10 hours",
+        },
+    }
+    return {"overlay": True, "outputs": outputs, "guide": guide}
+
+
 MTF_TIMEFRAMES = (
     # key, label prefix, kept in the price scale's autoscale. Lines run to the latest bar so
     # every label lines up just right of price.
@@ -748,4 +769,5 @@ UI_METADATA: dict[str, dict] = {
     "aln_sdev": _aln_sdev_metadata(),
     "mtf_sdev": _mtf_sdev_metadata(),
     "seiz": _seiz_metadata(),
+    "fmp": _fmp_metadata(),
 }

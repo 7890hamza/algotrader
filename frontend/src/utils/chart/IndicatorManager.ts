@@ -15,6 +15,7 @@ import { DEFAULT_CHART_TIME_ZONE } from './chartTimeZone';
 import { layoutBreaks } from './breakLines';
 import { mtfLayout, readBreaksGuide } from './breaks';
 import { buildRangeBar, type RangeBar } from './rangeBar';
+import { layoutFmp, parseList, readFmpGuide, type CurveLine } from './fmp';
 import { layoutSeiz, readSeizGuide } from './seiz';
 import type { RetraceLayer } from './retrace';
 import { layoutHourStats, readHourSlices, readHourStatsGuide } from './hourStats';
@@ -69,6 +70,7 @@ export interface IndicatorChartManager {
     marus?: readonly MaruMark[],
     rangeBar?: RangeBar | null,
     retrace?: RetraceLayer | null,
+    curves?: readonly CurveLine[],
   ): boolean;
   clearSessionLevels?(id: string): boolean;
   sessionLevelsExcept?(id: string): NearbyLevel[];
@@ -99,7 +101,8 @@ function drawsOnPrice(info: IndicatorInfo): boolean {
     Object.values(info.outputs).some((output) => output.type === 'box') ||
     readGuideConfig(info.guide) !== null ||
     isEngulfingGuide(info.guide) ||
-    readSeizGuide(info.guide) !== null
+    readSeizGuide(info.guide) !== null ||
+    readFmpGuide(info.guide) !== null
   );
 }
 
@@ -212,6 +215,17 @@ export class IndicatorManager {
     return start !== null && end !== null && end > start ? (end - start) * 60 : null;
   }
 
+  /** Smallest gap between consecutive points, in seconds (the chart's bar size). */
+  private barSeconds(points: readonly IndicatorDataPoint[]): number {
+    const times = points.map((p) => Number(p.timestamp_ms)).filter(Number.isFinite).sort((a, b) => a - b);
+    let bar = Number.POSITIVE_INFINITY;
+    for (let i = 1; i < times.length; i++) {
+      const d = (times[i] - times[i - 1]) / 1000;
+      if (d > 0 && d < bar) bar = d;
+    }
+    return Number.isFinite(bar) ? bar : 60;
+  }
+
   private renderLevels(id: string): void {
     const indicator = this.indicatorsStore.getById(id);
     const points = this.levelPoints.get(id);
@@ -220,6 +234,20 @@ export class IndicatorManager {
     }
     if (isEngulfingGuide(indicator.info.guide)) {
       this.renderEngulfing(id, points);
+      return;
+    }
+    const fmp = readFmpGuide(indicator.info.guide);
+    if (fmp) {
+      const valueOf = (key: string): unknown => indicator.parameters[key]?.value ?? indicator.parameters[key]?.default;
+      const curves = String(valueOf('curves') ?? 'curved');
+      const { segments, curves: lines } = layoutFmp(points, fmp, {
+        sigmas: parseList(valueOf('sigmas'), [0.5, 1, 1.5]),
+        slices: parseList(valueOf('slices'), fmp.slices),
+        curves: curves === 'off' || curves === 'straight' ? curves : 'curved',
+        hoursBack: Number(valueOf('hours_back') ?? 3) || 3,
+        barSeconds: this.barSeconds(points),
+      });
+      this.chartManager.setSessionLevels(id, PRICE_SERIES_KEY, segments, undefined, [], [], [], [], null, null, lines);
       return;
     }
     const seiz = readSeizGuide(indicator.info.guide);

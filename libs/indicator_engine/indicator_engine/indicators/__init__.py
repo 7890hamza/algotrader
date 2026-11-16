@@ -11,6 +11,7 @@ from .breaks import Breaks
 from .aln_sdev import AlnSDEV
 from .mtf_sdev import MtfSDEV
 from .seiz import SEIZ
+from .fmp import FMP
 from .macd import MACD
 from .rsi import RSI
 from .session_sdev import CmeOpenSDEV, SessionSDEV
@@ -35,4 +36,5 @@ __all__ = [
     "AlnSDEV",
     "MtfSDEV",
     "SEIZ",
+    "FMP",
 ]
