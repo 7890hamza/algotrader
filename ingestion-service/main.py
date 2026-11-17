@@ -601,6 +601,38 @@ class IngestionService:
                             max(backoff, self.config.recovery_backoff_max_seconds), backoff * 2
                         )
 
+    def _add_market(self, market: Dict[str, Any]) -> SymbolRuntimeState | None:
+        """Track a Market the service hasn't seen yet; None when it is already tracked."""
+        if market["symbol_id"] in self._state_by_id or self.consumer is None:
+            return None
+        state = SymbolRuntimeState(
+            symbol_id=market["symbol_id"],
+            symbol=market["symbol"],
+            exchange=market.get("exchange", ""),
+            stream_key=self.consumer.get_stream_key(market["symbol"], self.TIMEFRAME_CODE_M1),
+        )
+        self.markets.append(market)
+        self.runtime_states.append(state)
+        self._state_by_id[state.symbol_id] = state
+        return state
+
+    async def _watch_markets(self) -> None:
+        """Pick up Markets added while running (e.g. NQ / MES / MNQ from the chart's symbol list):
+        start their live stream and download their history, without a restart."""
+        interval = max(5, int(getattr(self.config, "market_poll_seconds", 30) or 30))
+        while not self._shutdown:
+            await asyncio.sleep(interval)
+            try:
+                markets = await self._db_call(self.db_client.get_markets)
+            except Exception:
+                self.logger.warning("Market list refresh failed; retrying", exc_info=True)
+                continue
+            for market in markets or []:
+                state = self._add_market(market)
+                if state is not None:
+                    self.logger.info("New market %s: starting stream and history", state.symbol)
+                    self._own_task(self._start_market(state))
+
     async def start_consumers(self) -> None:
         """Start independent protected startup operations; history never blocks the run loop."""
         if self.consumer is None:
@@ -764,6 +796,7 @@ class IngestionService:
                 await self.start_consumers()
 
             self._health_monitor_task = asyncio.create_task(self._monitor_broker_connectivity())
+            self._own_task(self._watch_markets())
 
             while not self._shutdown:
                 await asyncio.sleep(1)
