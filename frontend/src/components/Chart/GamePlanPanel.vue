@@ -72,7 +72,7 @@
 
       <game-plan-mini-chart v-if="live" :plan="plan" :board="board" :t="live.t" :price="live.price" />
 
-      <p class="gp-foot">ES 2016–2025 stats. Odds, never trade calls. ↻ = a session missed it and it carried over.</p>
+      <p class="gp-foot">{{ plan.source || "ES 2016-2025" }} stats. Odds, never trade calls. ↻ = a session missed it and it carried over.</p>
     </template>
   </aside>
 </template>

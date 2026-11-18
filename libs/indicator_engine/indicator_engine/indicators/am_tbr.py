@@ -1,11 +1,12 @@
-"""AM TBR (nqstats.com/am_tbr) with its MAE / MFE zones, measured on ES.
+"""AM TBR (nqstats.com/am_tbr) with its MAE / MFE zones, measured on ES and NQ.
 
 TBR = 08:00-12:00 New York (05:00-09:00 Pacific). TBR Open = the 08:00 open.
 1 SDEV = sample SDEV (ddof=1) of the previous 20 sessions' % net change, in points
 ``open * SDEV / 100``. Lines at TBR Open +/- 0.25 SDEV.
 
 After the first touch of either line three zones appear, in SDEV units from TBR Open,
-from the ES 2016-2025 study (1-minute AMP data), for the hour of the touch:
+from the 2016-2025 study of the chart's own index (ES: 1-minute AMP data; NQ: 1-minute
+NinjaTrader data; MES / SP500 use ES, MNQ / XYZ100 use NQ), for the hour of the touch:
 
 * stretch  - how far price pushed past the touched line on days it came back to
              TBR Open (median to 90th percentile; ``*_mid`` = 75th percentile)
@@ -22,6 +23,7 @@ first touch and of the first trade back at TBR Open after it).
 from __future__ import annotations
 
 from dataclasses import replace
+from functools import partial
 from typing import Dict
 
 import numpy as np
@@ -29,6 +31,7 @@ from zoneinfo import ZoneInfo
 
 from ..core.bars import BarTensor
 from ..core.tensor import Tensor
+from ..instruments import family_for, run_on_session_rows
 from .session_sdev import (
     MS_PER_DAY,
     MS_PER_MINUTE,
@@ -74,6 +77,30 @@ ZONE_STATS: dict[tuple[int, int], dict[str, tuple[float, float, float]]] = {
         "follow": (0.331, 0.605, 1.056),
     },
 }
+# The same study on NQ 2016-2025 (NinjaTrader 1-minute, front month stitched on volume).
+ZONE_STATS_NQ: dict[tuple[int, int], dict[str, tuple[float, float, float]]] = {
+    (1, 8): {
+        "stretch": (0.444, 0.646, 0.955),
+        "runaway": (1.500, 1.875, 2.312),
+        "follow": (0.695, 1.206, 1.938),
+    },
+    (1, 9): {
+        "stretch": (0.365, 0.512, 0.698),
+        "runaway": (1.014, 1.415, 1.665),
+        "follow": (0.424, 0.721, 1.446),
+    },
+    (-1, 8): {
+        "stretch": (0.433, 0.630, 0.940),
+        "runaway": (1.746, 2.440, 3.211),
+        "follow": (0.628, 1.148, 1.734),
+    },
+    (-1, 9): {
+        "stretch": (0.385, 0.544, 0.776),
+        "runaway": (1.204, 1.660, 2.262),
+        "follow": (0.337, 0.655, 1.046),
+    },
+}
+ZONE_STATS_BY_FAMILY = {"ES": ZONE_STATS, "NQ": ZONE_STATS_NQ}
 NEW_YORK = ZoneInfo("America/New_York")
 SESSION_GAP_MS = 2 * 60 * MS_PER_MINUTE
 
@@ -84,9 +111,13 @@ def am_tbr(
     high: np.ndarray,
     low: np.ndarray,
     close: np.ndarray,
+    *,
+    family: str = "ES",
     **level_kwargs,
 ) -> np.ndarray:
-    """Return an array (time, len(OUTPUTS)); see the module docstring."""
+    """Return an array (time, len(OUTPUTS)); see the module docstring. ``family`` picks the
+    zone table ("ES" or "NQ")."""
+    table = ZONE_STATS_BY_FAMILY[family]
     n = len(epoch_ms)
     out = np.full((n, len(OUTPUTS)), np.nan, dtype=np.float64)
     if n == 0:
@@ -135,7 +166,7 @@ def am_tbr(
             out[tail, COL["follow_now"]] = (
                 np.minimum.accumulate(low[tail]) if side == 1 else np.maximum.accumulate(high[tail])
             )
-        stats = ZONE_STATS[(side, min(max(int(ny_hour[r[k]]), 8), 9))]
+        stats = table[(side, min(max(int(ny_hour[r[k]]), 8), 9))]
         for zone, (med, p75, p90) in stats.items():
             direction = -side if zone == "follow" else side
             out[after, COL[f"{zone}_near"]] = o + direction * med * pts
@@ -154,11 +185,13 @@ class AmTBR(SessionSDEV):
         description=(
             "AM Time-Based Range (8:00-12:00 New York): TBR Open, +/- 0.25 SDEV (sample "
             "SDEV of 20 sessions) and, after the first touch, the usual stretch, runaway "
-            "and follow-through zones from ES 2016-2025."
+            "and follow-through zones from 2016-2025 (ES table for ES / MES / SP500, NQ table for "
+            "NQ / MNQ / XYZ100)."
         ),
         parameters={
             **{k: v for k, v in _parameters("05:00", "09:00", "Mon-Fri").items() if k != "levels"},
             "ddof": {"type": "int", "default": 1, "min": 0, "max": 1},
+            "market": {"type": "string", "default": "auto", "options": ["auto", "ES", "NQ"]},
         },
         outputs=OUTPUTS,
         required_fields=["open", "high", "low", "close"],
@@ -176,9 +209,12 @@ class AmTBR(SessionSDEV):
         n_time, n_assets = data.data.shape[0], data.data.shape[1]
         out = np.full((n_time, n_assets, len(OUTPUTS)), np.nan, dtype=np.float64)
         for a in range(n_assets):
-            out[:, a, :] = am_tbr(
-                epoch_ms,
-                *(data.data[:, a, idx[f]] for f in ("open", "high", "low", "close")),
+            asset = data.assets[a]
+            out[:, a, :] = run_on_session_rows(
+                asset, epoch_ms, [data.data[:, a, idx[f]] for f in ("open", "high", "low", "close")],
+                len(OUTPUTS), partial(
+                am_tbr,
+                family=family_for(asset, merged.get("market")),
                 lookback=int(merged["lookback"]),
                 session_start=str(merged["session_start"]),
                 session_end=str(merged["session_end"]),
@@ -186,7 +222,7 @@ class AmTBR(SessionSDEV):
                 session_days=str(merged["session_days"]),
                 extend=str(merged["extend"]),
                 ddof=int(merged["ddof"]),
-            )
+            ))
         return Tensor(
             data=out,
             dims=("time", "asset", "output"),

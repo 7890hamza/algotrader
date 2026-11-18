@@ -771,3 +771,46 @@ UI_METADATA: dict[str, dict] = {
     "seiz": _seiz_metadata(),
     "fmp": _fmp_metadata(),
 }
+
+
+def guide_for_symbol(guide: dict, symbol: str | None) -> dict:
+    """The guide with the stats of the chart's own index: ES tables for ES / MES / SP500, NQ tables
+    for NQ / MNQ / XYZ100 (see ``indicator_engine.instruments``). Adds ``market`` (symbol, family,
+    venue, tick, point value) so the chart can word its cards for the instrument it shows."""
+    from indicator_engine.instruments import instrument_for
+
+    from app import nq_stats as NQ
+
+    inst = instrument_for(symbol)
+    out = dict(guide)
+    out["market"] = {
+        "symbol": inst.symbol,
+        "family": inst.family,
+        "venue": inst.venue,
+        "name": inst.name,
+        "tick": inst.tick_size,
+        "pointValue": inst.point_value,
+        "known": inst.known,
+    }
+    kind = guide.get("kind")
+    if inst.family == "NQ":
+        if kind == "tbr_am":
+            out["rates"] = NQ.TBR_RATES["am"]
+        elif kind == "tbr":
+            out["sessions"] = [
+                {**s, "cameBack": NQ.TBR_SESSIONS[s["key"]][0], "touched": NQ.TBR_SESSIONS[s["key"]][1],
+                 "rates": NQ.TBR_RATES[s["key"]]}
+                for s in guide.get("sessions", [])
+            ]
+        elif kind == "hour_stats":
+            out["hours"], out["slices"] = NQ.HOUR_RATES, NQ.HOUR_SLICES
+        elif kind == "breaks":
+            out["rates"] = NQ.BREAK_RATES
+        elif kind == "aln":
+            out["stats"] = NQ.ALN_STATS
+    source = guide.get("source")
+    if isinstance(source, str) and source.startswith("ES 2016-2025"):
+        out["source"] = NQ.SOURCE if inst.family == "NQ" else source
+    if isinstance(out.get("source"), str) and inst.symbol not in ("ES", "NQ") and inst.known:
+        out["source"] = f"{out['source']} (used for {inst.symbol})"
+    return out

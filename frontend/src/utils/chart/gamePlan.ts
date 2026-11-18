@@ -31,6 +31,8 @@ export interface PlanLevel {
 
 export interface DayPlan {
   symbol: string;
+  /** Where the odds come from, e.g. "NQ 2016-2025 (used for MNQ)". */
+  source?: string;
   key: string;
   label: string;
   start: number;

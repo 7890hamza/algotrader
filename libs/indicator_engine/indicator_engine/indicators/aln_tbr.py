@@ -3,8 +3,9 @@
 For each session (New York time): the open is the first bar, 1 SDEV is the sample SDEV
 (ddof=1) of the previous 20 complete sessions' % net change (open to the last bar), and
 lines sit at open +/- 0.25 SDEV. After the first touch, zones appear (median to 90th
-percentile, ``*_mid`` = 75th percentile, in SDEV from the open), from the ES 2016-2025
-study: ``stretch`` (push past the line on sessions that came back), ``runaway`` (sessions
+percentile, ``*_mid`` = 75th percentile, in SDEV from the open), from the 2016-2025 study of the
+chart's index (ES table: ES / MES / SP500; NQ table: NQ / MNQ / XYZ100):
+``stretch`` (push past the line on sessions that came back), ``runaway`` (sessions
 that never came back) and ``follow`` (past the open on the other side after coming back).
 ``<s>_side`` is +1 / -1 from the first touch on (which line was touched first) and
 ``<s>_revert_at`` is the epoch ms of the first trade back at the open after the touch.
@@ -24,6 +25,7 @@ from zoneinfo import ZoneInfo
 from ..core.bars import BarTensor
 from ..core.spec import IndicatorSpec
 from ..core.tensor import Tensor
+from ..instruments import family_for, run_on_session_rows
 from .base import IndicatorBase
 from .session_sdev import MINUTES_PER_DAY, MS_PER_DAY, MS_PER_MINUTE, _local_ms, to_epoch_ms
 
@@ -70,6 +72,16 @@ ZONE_STATS: dict[str, dict[str, tuple[float, float, float]]] = {
         "follow": (0.511, 0.995, 1.648),
     },
 }
+# The same study on NQ 2016-2025 (NinjaTrader 1-minute, front month stitched on volume).
+ZONE_STATS_NQ: dict[str, dict[str, tuple[float, float, float]]] = {
+    "cme": {"stretch": (0.444, 0.654, 0.953), "runaway": (1.116, 1.729, 2.797), "follow": (0.467, 0.943, 1.637)},
+    "asia": {"stretch": (0.411, 0.603, 0.932), "runaway": (1.265, 1.788, 2.482), "follow": (0.526, 1.052, 1.824)},
+    "ldn": {"stretch": (0.412, 0.624, 0.912), "runaway": (1.351, 1.919, 2.516), "follow": (0.525, 1.060, 1.834)},
+    "am": {"stretch": (0.415, 0.601, 0.885), "runaway": (1.346, 1.837, 2.444), "follow": (0.552, 1.016, 1.663)},
+    "pm": {"stretch": (0.399, 0.588, 0.877), "runaway": (1.197, 1.714, 2.470), "follow": (0.509, 0.970, 1.682)},
+    "ny": {"stretch": (0.400, 0.582, 0.877), "runaway": (1.330, 1.789, 2.390), "follow": (0.512, 0.968, 1.637)},
+}
+ZONE_STATS_BY_FAMILY = {"ES": ZONE_STATS, "NQ": ZONE_STATS_NQ}
 FIELDS = (
     ["open", "up", "dn", "revert_at", "side"]
     + [f"{z}_{e}" for z in ZONES for e in ("near", "far", "mid")]
@@ -110,6 +122,7 @@ def session_fade(
     *,
     lookback: int = LOOKBACK,
     ddof: int = 1,
+    family: str = "ES",
 ) -> np.ndarray:
     """Return (time, len(FIELDS)) for one session; see the module docstring."""
     start, length = SESSIONS[name]
@@ -143,7 +156,7 @@ def session_fade(
         sessions.append((rows, complete, chg))
 
     history: list[float] = []
-    stats = ZONE_STATS[name]
+    stats = ZONE_STATS_BY_FAMILY[family][name]
     for rows, complete, chg in sessions:
         if len(history) >= lookback and offset[rows[0]] < edge:
             sd = float(np.std(history[-lookback:], ddof=ddof))
@@ -202,6 +215,7 @@ class AlnTBR(IndicatorBase):
         parameters={
             "sessions": {"type": "string", "default": "cme, asia, ldn, am, pm"},
             "lookback": {"type": "int", "default": LOOKBACK, "min": 2},
+            "market": {"type": "string", "default": "auto", "options": ["auto", "ES", "NQ"]},
         },
         outputs=OUTPUTS,
         required_fields=["open", "high", "low", "close"],
@@ -226,11 +240,15 @@ class AlnTBR(IndicatorBase):
         n_time, n_assets = data.data.shape[0], data.data.shape[1]
         out = np.full((n_time, n_assets, len(OUTPUTS)), np.nan, dtype=np.float64)
         for a in range(n_assets):
+            asset = data.assets[a]
+            family = family_for(asset, merged.get("market"))
             series = [data.data[:, a, idx[f]] for f in ("open", "high", "low", "close")]
             for name in names:
                 first = COL[f"{name}_open"]
-                out[:, a, first : first + len(FIELDS)] = session_fade(
-                    epoch_ms, *series, name, lookback=int(merged["lookback"])
+                out[:, a, first : first + len(FIELDS)] = run_on_session_rows(
+                    asset, epoch_ms, series, len(FIELDS),
+                    lambda t, o, h, l, c, name=name: session_fade(
+                        t, o, h, l, c, name, lookback=int(merged["lookback"]), family=family),
                 )
         return Tensor(
             data=out,

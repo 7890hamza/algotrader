@@ -26,15 +26,18 @@ import numpy as np
 from ..core.bars import BarTensor
 from ..core.spec import IndicatorSpec
 from ..core.tensor import Tensor
+from ..instruments import run_on_session_rows
 from .base import IndicatorBase
 from .session_sdev import (
     DEFAULT_LEVELS,
     MINUTES_PER_DAY,
     MULTIPLIERS,
-    OUTPUTS as LEVEL_KEYS,
     parse_levels,
     session_levels,
     to_epoch_ms,
+)
+from .session_sdev import (
+    OUTPUTS as LEVEL_KEYS,
 )
 
 # key: (start, end, time zone, session days)
@@ -112,9 +115,11 @@ class AlnSDEV(IndicatorBase):
             for name in names:
                 start, end, tz, days = SESSIONS[name]
                 col = list(SESSIONS).index(name) * width
-                out[:, a, col:col + width] = session_levels(
-                    epoch_ms, o, c, lookback=lookback, session_start=start, session_end=end,
-                    time_zone=tz, session_days=days, levels=levels,
+                out[:, a, col:col + width] = run_on_session_rows(
+                    data.assets[a], epoch_ms, [o, c], width,
+                    lambda t, o_, c_, start=start, end=end, tz=tz, days=days: session_levels(
+                        t, o_, c_, lookback=lookback, session_start=start, session_end=end,
+                        time_zone=tz, session_days=days, levels=levels),
                 )
         return Tensor(
             data=out,

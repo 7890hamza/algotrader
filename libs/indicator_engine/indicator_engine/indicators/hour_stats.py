@@ -1,4 +1,4 @@
-"""Hour Stats (nqstats.com/hour_stats) measured on ES, every hour of the CME day.
+"""Hour Stats (nqstats.com/hour_stats) measured on ES and NQ, every hour of the CME day.
 
 For each New York hour that has stats (all but 18:00, which has no prior hour): the hour open and the prior hour's high
 and low. A setup needs the hour open strictly inside the prior hour's range. A breach is
@@ -8,8 +8,8 @@ when a later candle trades to the hour open before the hour ends.
 Outputs (on every candle of the hour): ``open``, ``ph`` and ``pl`` (prior hour high /
 low) and ``setup`` (1 when the open was inside the prior range, else 0). From the breach
 on: ``side`` (+1 prior high / -1 prior low), ``breach_at`` (epoch ms), ``seg`` (0 / 1 / 2
-for a breach in minutes 0-19 / 20-39 / 40-59) and two zones from the ES 2016-2025 study
-for that hour (median to 90th percentile, ``*_mid`` the 75th):
+for a breach in minutes 0-19 / 20-39 / 40-59) and two zones from the 2016-2025 study of the
+chart's index for that hour (ES table: ES / MES / SP500; NQ table: NQ / MNQ / XYZ100) (median to 90th percentile, ``*_mid`` the 75th):
 
 * ``stretch`` (MAE) - how far past the breached level price went on hours that came back
 * ``follow`` (MFE) - how far past the open, on the other side, price went after coming back
@@ -19,6 +19,7 @@ for that hour (median to 90th percentile, ``*_mid`` the 75th):
 
 from __future__ import annotations
 
+from functools import partial
 from typing import Dict
 
 import numpy as np
@@ -27,6 +28,7 @@ from zoneinfo import ZoneInfo
 from ..core.bars import BarTensor
 from ..core.spec import IndicatorSpec
 from ..core.tensor import Tensor
+from ..instruments import family_for, instrument_for, run_on_session_rows
 from .base import IndicatorBase
 from .session_sdev import MS_PER_MINUTE, _local_ms, to_epoch_ms
 
@@ -66,6 +68,33 @@ ZONE_STATS: dict[int, dict[str, tuple[float, float, float]]] = {
     23: {"stretch": (0.0167, 0.0325, 0.0583), "follow": (0.0237, 0.0550, 0.1057)},
 }
 
+# The same study on NQ 2016-2025 (NinjaTrader 1-minute, front month stitched on volume).
+ZONE_STATS_NQ: dict[int, dict[str, tuple[float, float, float]]] = {
+    0: {"stretch": (0.0153, 0.0344, 0.0724), "follow": (0.0356, 0.0732, 0.1448)},
+    1: {"stretch": (0.0197, 0.0394, 0.0674), "follow": (0.0470, 0.0948, 0.1765)},
+    2: {"stretch": (0.0235, 0.0517, 0.0948), "follow": (0.0582, 0.1224, 0.2084)},
+    3: {"stretch": (0.0318, 0.0646, 0.1231), "follow": (0.0822, 0.1734, 0.2931)},
+    4: {"stretch": (0.0284, 0.0605, 0.1144), "follow": (0.0669, 0.1408, 0.2408)},
+    5: {"stretch": (0.0262, 0.0523, 0.1002), "follow": (0.0614, 0.1245, 0.2175)},
+    6: {"stretch": (0.0255, 0.0545, 0.0905), "follow": (0.0602, 0.1216, 0.2291)},
+    7: {"stretch": (0.0268, 0.0591, 0.1085), "follow": (0.0661, 0.1319, 0.2290)},
+    8: {"stretch": (0.0315, 0.0702, 0.1363), "follow": (0.0967, 0.2012, 0.3787)},
+    9: {"stretch": (0.0505, 0.1154, 0.2436), "follow": (0.2110, 0.4049, 0.6702)},
+    10: {"stretch": (0.0663, 0.1438, 0.2496), "follow": (0.1822, 0.3673, 0.5996)},
+    11: {"stretch": (0.0496, 0.1050, 0.2027), "follow": (0.1427, 0.2667, 0.4385)},
+    12: {"stretch": (0.0387, 0.0830, 0.1572), "follow": (0.1193, 0.2382, 0.3995)},
+    13: {"stretch": (0.0368, 0.0906, 0.1707), "follow": (0.1185, 0.2390, 0.4203)},
+    14: {"stretch": (0.0465, 0.1082, 0.1941), "follow": (0.1187, 0.2541, 0.4498)},
+    15: {"stretch": (0.0482, 0.1031, 0.2045), "follow": (0.1289, 0.2714, 0.5128)},
+    16: {"stretch": (0.0331, 0.0728, 0.1432), "follow": (0.0692, 0.1372, 0.3154)},
+    19: {"stretch": (0.0195, 0.0417, 0.0823), "follow": (0.0478, 0.0935, 0.1976)},
+    20: {"stretch": (0.0257, 0.0538, 0.1000), "follow": (0.0586, 0.1266, 0.2496)},
+    21: {"stretch": (0.0249, 0.0505, 0.0905), "follow": (0.0557, 0.1071, 0.1926)},
+    22: {"stretch": (0.0203, 0.0404, 0.0760), "follow": (0.0441, 0.0867, 0.1685)},
+    23: {"stretch": (0.0166, 0.0327, 0.0608), "follow": (0.0344, 0.0728, 0.1325)},
+}
+ZONE_STATS_BY_FAMILY = {"ES": ZONE_STATS, "NQ": ZONE_STATS_NQ}
+
 
 def hour_stats(
     epoch_ms: np.ndarray,
@@ -75,8 +104,10 @@ def hour_stats(
     close: np.ndarray,
     *,
     tick: float = TICK,
+    family: str = "ES",
 ) -> np.ndarray:
     """Return an array (time, len(OUTPUTS)); see the module docstring."""
+    table = ZONE_STATS_BY_FAMILY[family]
     n = len(epoch_ms)
     out = np.full((n, len(OUTPUTS)), np.nan, dtype=np.float64)
     if n == 0:
@@ -90,7 +121,7 @@ def hour_stats(
     ends = np.r_[starts[1:], n]
     for g, (a, b) in enumerate(zip(starts, ends)):
         hod = int(hour_of_day[a])
-        if hod not in ZONE_STATS or g == 0:
+        if hod not in table or g == 0:
             continue
         pa, pb = starts[g - 1], ends[g - 1]
         if hour_key[pa] != hour_key[a] - 1:
@@ -117,7 +148,7 @@ def hour_stats(
         out[after, COL["seg"]] = min(2, int(minute[a + k]) // 20)
         level = ph if side == 1 else pl
         for z_i, zone in enumerate(ZONES):
-            med, p75, p90 = ZONE_STATS[hod][zone]
+            med, p75, p90 = table[hod][zone]
             base, direction = (level, side) if zone == "stretch" else (o, -side)
             col = COL[f"{zone}_near"]
             out[after, col] = base + direction * med * o / 100
@@ -139,9 +170,12 @@ class HourStats(IndicatorBase):
         description=(
             "Each hour 8:00-16:00 New York: hour open and prior hour high / low. When the "
             "open is inside the prior range, marks the first breach and the return to the "
-            "open, with the ES 2016-2025 odds by hour and the MAE / MFE zones."
+            "open, with the 2016-2025 odds by hour and the MAE / MFE zones of the chart's index "
+            "(ES or NQ table) and its own tick size."
         ),
-        parameters={},
+        parameters={
+            "market": {"type": "string", "default": "auto", "options": ["auto", "ES", "NQ"]},
+        },
         outputs=OUTPUTS,
         required_fields=["open", "high", "low", "close"],
         supports_update=False,
@@ -152,6 +186,7 @@ class HourStats(IndicatorBase):
     )
 
     def batch(self, data: BarTensor, params: Dict) -> Tensor:
+        choice = (params or {}).get("market") or "auto"
         idx = {}
         for field in ("open", "high", "low", "close"):
             if field not in data.fields:
@@ -161,8 +196,12 @@ class HourStats(IndicatorBase):
         n_time, n_assets = data.data.shape[0], data.data.shape[1]
         out = np.full((n_time, n_assets, len(OUTPUTS)), np.nan, dtype=np.float64)
         for a in range(n_assets):
-            out[:, a, :] = hour_stats(
-                epoch_ms, *(data.data[:, a, idx[f]] for f in ("open", "high", "low", "close"))
+            asset = data.assets[a]
+            series = [data.data[:, a, idx[f]] for f in ("open", "high", "low", "close")]
+            out[:, a, :] = run_on_session_rows(
+                asset, epoch_ms, series, len(OUTPUTS),
+                partial(hour_stats, tick=instrument_for(asset).tick_for(series[3]),
+                        family=family_for(asset, choice)),
             )
         return Tensor(
             data=out,

@@ -28,8 +28,16 @@ from zoneinfo import ZoneInfo
 from ..core.bars import BarTensor
 from ..core.spec import IndicatorSpec
 from ..core.tensor import Tensor
+from ..instruments import run_on_session_rows
 from .base import IndicatorBase
-from .session_sdev import MINUTES_PER_DAY, MS_PER_DAY, MS_PER_HOUR, MS_PER_MINUTE, _local_ms, to_epoch_ms
+from .session_sdev import (
+    MINUTES_PER_DAY,
+    MS_PER_DAY,
+    MS_PER_HOUR,
+    MS_PER_MINUTE,
+    _local_ms,
+    to_epoch_ms,
+)
 
 NEW_YORK = ZoneInfo("America/New_York")
 TIMEFRAMES = ("h1", "h4", "d", "w", "m")
@@ -198,7 +206,9 @@ class MtfSDEV(IndicatorBase):
         n_time, n_assets = data.data.shape[0], data.data.shape[1]
         out = np.full((n_time, n_assets, len(OUTPUTS)), np.nan, dtype=np.float64)
         for a in range(n_assets):
-            out[:, a, :] = mtf_sdev(epoch_ms, *(data.data[:, a, idx[f]] for f in ("open", "high", "low", "close")), **kwargs)
+            out[:, a, :] = run_on_session_rows(
+                data.assets[a], epoch_ms, [data.data[:, a, idx[f]] for f in ("open", "high", "low", "close")],
+                len(OUTPUTS), lambda *cols: mtf_sdev(*cols, **kwargs))
         return Tensor(
             data=out,
             dims=("time", "asset", "output"),

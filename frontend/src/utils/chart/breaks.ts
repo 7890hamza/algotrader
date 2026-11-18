@@ -2,8 +2,10 @@ import type { IndicatorDataPoint, JsonObject } from '@/types/contracts';
 
 import { formatClock, formatPrice, type SessionTag } from './alnGuide';
 
-/** ES 2016-2025 odds for the Breaks indicator (see indicator-api BREAK_RATES). */
+/** Breaks odds for the chart's index, ES or NQ 2016-2025 (see indicator-api BREAK_RATES / nq_stats). */
 export interface BreakRates {
+  /** Where the odds come from, e.g. "NQ 2016-2025". */
+  source?: string;
   rth: {
     inside: { n: number; either: number; one: number; both: number; upper: [number, number]; middle: [number, number]; lower: [number, number] };
     gap_up: { n: number; held: number };
@@ -19,7 +21,8 @@ export interface BreakRates {
 
 export function readBreaksGuide(guide: JsonObject | undefined): BreakRates | null {
   if (!guide || guide.kind !== 'breaks' || typeof guide.rates !== 'object' || guide.rates === null) return null;
-  return guide.rates as unknown as BreakRates;
+  const source = typeof guide.source === 'string' ? guide.source : undefined;
+  return { ...(guide.rates as unknown as BreakRates), source };
 }
 
 const NY_PARTS = new Intl.DateTimeFormat('en-US', {
@@ -207,7 +210,7 @@ export function buildBreaksTags(points: readonly IndicatorDataPoint[], rates: Br
     tag.result = result(bet, hitH, hitL, finished);
     tag.lines.push(missLine(bet.pct));
     tag.lines.push(...hitLines('pRTH', run, 'rth_hit_h', 'rth_hit_l', timeZone, finished, 'the close'));
-    tag.lines.push(`Odds: ES 2016-2025, ${n.toLocaleString()} days like this. A hit = 1 tick past the line.`);
+    tag.lines.push(`Odds: ${rates.source ?? 'ES 2016-2025'}, ${n.toLocaleString()} days like this. A hit = 1 tick past the line.`);
     tags.push(tag);
   }
 

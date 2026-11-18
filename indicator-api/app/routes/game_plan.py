@@ -30,7 +30,7 @@ def _plan(symbol: str, exchange: Optional[str], d: date) -> dict:
     h1 = _fetch_candles_sync(symbol, "H1", start - 430 * 86_400_000, end, None, exchange)
     h1_rows = _rows(h1)
     recent = h1_rows[h1_rows[:, 0] >= start - 50 * 86_400_000] if len(h1_rows) else h1_rows
-    plan = build_plan(_rows(m1), recent, d, h1_long=h1_rows)
+    plan = build_plan(_rows(m1), recent, d, h1_long=h1_rows, symbol=symbol)
     plan["symbol"] = symbol
     return plan
 

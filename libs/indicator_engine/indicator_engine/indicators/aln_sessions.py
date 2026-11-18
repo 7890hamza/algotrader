@@ -28,6 +28,7 @@ Outputs, per bar (NaN where they don't apply):
 
 from __future__ import annotations
 
+from functools import partial
 from typing import Dict
 
 import numpy as np
@@ -36,6 +37,7 @@ from zoneinfo import ZoneInfo
 from ..core.bars import BarTensor
 from ..core.spec import IndicatorSpec
 from ..core.tensor import Tensor
+from ..instruments import run_on_session_rows
 from .base import IndicatorBase
 from .session_sdev import (
     MS_PER_DAY,
@@ -212,17 +214,16 @@ class AlnSessions(IndicatorBase):
         n_time, n_assets = data.data.shape[0], data.data.shape[1]
         out = np.full((n_time, n_assets, len(OUTPUTS)), np.nan, dtype=np.float64)
         for a in range(n_assets):
-            out[:, a, :] = aln_sessions(
-                epoch_ms,
-                data.data[:, a, idx["open"]],
-                data.data[:, a, idx["high"]],
-                data.data[:, a, idx["low"]],
-                data.data[:, a, idx["close"]],
-                time_zone=str(merged["time_zone"]),
-                asia_start=str(merged["asia_start"]),
-                london_start=str(merged["london_start"]),
-                ny_start=str(merged["ny_start"]),
-                ny_end=str(merged["ny_end"]),
+            out[:, a, :] = run_on_session_rows(
+                data.assets[a], epoch_ms, [data.data[:, a, idx[f]] for f in ("open", "high", "low", "close")],
+                len(OUTPUTS), partial(
+                    aln_sessions,
+                    time_zone=str(merged["time_zone"]),
+                    asia_start=str(merged["asia_start"]),
+                    london_start=str(merged["london_start"]),
+                    ny_start=str(merged["ny_start"]),
+                    ny_end=str(merged["ny_end"]),
+                ),
             )
         return Tensor(
             data=out,

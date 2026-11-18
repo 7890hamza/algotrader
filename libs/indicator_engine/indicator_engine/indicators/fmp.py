@@ -29,6 +29,7 @@ from zoneinfo import ZoneInfo
 from ..core.bars import BarTensor
 from ..core.spec import IndicatorSpec
 from ..core.tensor import Tensor
+from ..instruments import run_on_session_rows
 from .base import IndicatorBase
 from .fmp_tables import RANGE, SIGMA
 from .seiz import market_for
@@ -136,9 +137,11 @@ class FMP(IndicatorBase):
         out = np.full((n_time, n_assets, len(OUTPUTS)), np.nan, dtype=np.float64)
         scale = "fixed" if str(p["scale"]).lower() == "fixed" else "adaptive"
         for a in range(n_assets):
-            cols = (data.data[:, a, idx[f]] for f in ("open", "high", "low"))
+            cols = [data.data[:, a, idx[f]] for f in ("open", "high", "low")]
             market = market_for(data.assets[a], p["market"])
-            out[:, a, :] = fmp(epoch_ms, *cols, market=market, scale=scale)
+            out[:, a, :] = run_on_session_rows(
+                data.assets[a], epoch_ms, cols, len(OUTPUTS),
+                lambda *c, market=market: fmp(*c, market=market, scale=scale))
         return Tensor(
             data=out,
             dims=("time", "asset", "output"),

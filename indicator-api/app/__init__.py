@@ -1,6 +1,6 @@
 from indicator_engine import get_batch_engine, get_registry
 
-from .ui_metadata import UI_METADATA
+from .ui_metadata import UI_METADATA, guide_for_symbol
 
 ENGINE_REGISTRY = get_registry()
 BATCH_ENGINE = get_batch_engine(ENGINE_REGISTRY)
@@ -45,7 +45,9 @@ def get_available_indicators() -> list[dict]:
     ]
 
 
-def get_indicator_metadata(indicator_id: int) -> dict:
+def get_indicator_metadata(indicator_id: int, symbol: str | None = None) -> dict:
+    """Indicator info for the chart. With ``symbol`` the guide carries that instrument's stats
+    (ES or NQ tables) and its market details."""
     engine_id = INDICATOR_MAP[indicator_id]
     spec = ENGINE_REGISTRY.get(engine_id).spec
     ui = UI_METADATA.get(engine_id, {})
@@ -61,7 +63,7 @@ def get_indicator_metadata(indicator_id: int) -> dict:
         "outputs": outputs,
         "parameters": spec.parameters,
         "inputs": spec.required_assets or [],
-        **({"guide": ui["guide"]} if "guide" in ui else {}),
+        **({"guide": guide_for_symbol(ui["guide"], symbol)} if "guide" in ui else {}),
     }
 
 

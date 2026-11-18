@@ -11,6 +11,7 @@ The default session is the CME Globex day for equity index futures: it opens at
 
 from __future__ import annotations
 
+from functools import partial
 from typing import Dict
 
 import numpy as np
@@ -19,6 +20,7 @@ from zoneinfo import ZoneInfo
 from ..core.bars import BarTensor
 from ..core.spec import IndicatorSpec
 from ..core.tensor import Tensor
+from ..instruments import run_on_session_rows
 from .base import IndicatorBase
 from .session_sdev import (
     MINUTES_PER_DAY,
@@ -108,14 +110,14 @@ class CurrentDayOHL(IndicatorBase):
         n_time, n_assets = data.data.shape[0], data.data.shape[1]
         out = np.full((n_time, n_assets, len(OUTPUTS)), np.nan, dtype=np.float64)
         for a in range(n_assets):
-            out[:, a, :] = current_day_ohl(
-                epoch_ms,
-                data.data[:, a, idx["open"]],
-                data.data[:, a, idx["high"]],
-                data.data[:, a, idx["low"]],
-                time_zone=str(merged["time_zone"]),
-                session_start=str(merged["session_start"]),
-                session_end=str(merged["session_end"]),
+            out[:, a, :] = run_on_session_rows(
+                data.assets[a], epoch_ms, [data.data[:, a, idx[f]] for f in ("open", "high", "low")],
+                len(OUTPUTS), partial(
+                    current_day_ohl,
+                    time_zone=str(merged["time_zone"]),
+                    session_start=str(merged["session_start"]),
+                    session_end=str(merged["session_end"]),
+                ),
             )
         return Tensor(
             data=out,

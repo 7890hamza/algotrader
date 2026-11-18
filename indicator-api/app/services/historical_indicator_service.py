@@ -102,7 +102,7 @@ async def run_historical_indicator(
 ) -> dict:
     timeframe_code = normalize_timeframe_code(timeframe)
     timeframe_minutes = timeframe_to_minutes(timeframe_code)
-    metadata = get_indicator_metadata(indicator_id)
+    metadata = get_indicator_metadata(indicator_id, symbol)
 
     parameters = prepare_parameters(
         metadata,
@@ -147,7 +147,9 @@ async def run_historical_indicator(
             candle_cache=candle_cache,
         )
 
-    bar_tensor = bars_from_dataframe(candles)
+    # Name the asset after the chart symbol so instrument-aware indicators (ES vs NQ tables, tick
+    # size, Hyperliquid's 24/7 calendar) know what they are running on.
+    bar_tensor = bars_from_dataframe(candles, assets=None if required_assets else [symbol.upper()])
     param_grid = ParamGrid(indicator_params)
     indicator_result = BATCH_ENGINE.run(engine_id, bar_tensor, param_grid)
     indicator_raw = tensor_to_dataframe_single(indicator_result.tensor)

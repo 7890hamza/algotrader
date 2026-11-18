@@ -27,6 +27,8 @@ level (a touch for "back to the open").
 from __future__ import annotations
 
 import statistics as st
+from contextvars import ContextVar
+from dataclasses import dataclass
 from datetime import date, datetime, timedelta, timezone
 from typing import Any
 
@@ -42,8 +44,10 @@ from indicator_engine.indicators.hour_stats import COL as HC
 from indicator_engine.indicators.hour_stats import hour_stats
 from indicator_engine.indicators.mtf_sdev import COL as MC
 from indicator_engine.indicators.mtf_sdev import mtf_sdev
+from indicator_engine.instruments import cme_open, instrument_for
 from zoneinfo import ZoneInfo
 
+from app import nq_stats as NQ
 from app.ui_metadata import ALN_STATS, BREAK_RATES, HOUR_RATES, HOUR_SLICES, TBR_RATES
 
 PT = ZoneInfo("America/Los_Angeles")
@@ -144,6 +148,59 @@ COLORS = {
     "asia": "#E0574A",
     "london": "#5B7CFA",
 }
+
+@dataclass(frozen=True)
+class _Stats:
+    """The stat tables and tick for the instrument the plan is for."""
+    symbol: str
+    family: str
+    source: str
+    TICK: float
+    SDEV_HITS: dict
+    TBR_ODDS: dict
+    HOUR_SWEEP: dict
+    MTF_HITS: dict
+    OPEN_BACK: dict
+    ALN_STATS: dict
+    BREAK_RATES: dict
+    HOUR_RATES: dict
+    HOUR_SLICES: dict
+    TBR_RATES: dict
+
+
+def stats_for(symbol: str | None, m1_rows: np.ndarray | None = None) -> _Stats:
+    """ES tables for ES / MES / SP500, NQ tables for NQ / MNQ / XYZ100, and the instrument's tick
+    (Hyperliquid's depends on price: taken from the latest close)."""
+    inst = instrument_for(symbol or "ES")
+    price = None
+    if m1_rows is not None and len(m1_rows):
+        price = float(np.asarray(m1_rows)[-1, -1])
+    tick = inst.tick(price)
+    if inst.family == "NQ":
+        src = NQ.SOURCE
+        tables = dict(SDEV_HITS=NQ.SDEV_HITS, TBR_ODDS=NQ.TBR_ODDS, HOUR_SWEEP=NQ.HOUR_SWEEP, MTF_HITS=NQ.MTF_HITS,
+                      OPEN_BACK=NQ.OPEN_BACK, ALN_STATS=NQ.ALN_STATS, BREAK_RATES=NQ.BREAK_RATES,
+                      HOUR_RATES=NQ.HOUR_RATES, HOUR_SLICES=NQ.HOUR_SLICES, TBR_RATES=NQ.TBR_RATES)
+    else:
+        src = "ES 2016-2025"
+        tables = dict(SDEV_HITS=SDEV_HITS, TBR_ODDS=TBR_ODDS, HOUR_SWEEP=HOUR_SWEEP, MTF_HITS=MTF_HITS,
+                      OPEN_BACK=OPEN_BACK, ALN_STATS=ALN_STATS, BREAK_RATES=BREAK_RATES,
+                      HOUR_RATES=HOUR_RATES, HOUR_SLICES=HOUR_SLICES, TBR_RATES=TBR_RATES)
+    if inst.symbol not in ("ES", "NQ") and inst.known:
+        src = f"{src} (used for {inst.symbol})"
+    return _Stats(symbol=inst.symbol, family=inst.family, source=src, TICK=tick, **tables)
+
+
+_STATS: ContextVar[_Stats | None] = ContextVar("game_plan_stats", default=None)
+
+
+def _cme_rows(rows: np.ndarray) -> np.ndarray:
+    rows = np.asarray(rows)
+    return rows[cme_open(rows[:, 0].astype(np.int64))] if len(rows) else rows
+
+
+def _S() -> _Stats:
+    return _STATS.get() or stats_for("ES")
 
 
 def _ms(dt: datetime) -> int:
@@ -256,9 +313,9 @@ def _scan(lv: dict, bars: _Bars, touch: bool = False) -> None:
     if touch:
         hit = (l <= lv["price"]) & (h >= lv["price"])
     elif lv["side"] == "up":
-        hit = h >= lv["price"] + TICK
+        hit = h >= lv["price"] + _S().TICK
     else:
-        hit = l <= lv["price"] - TICK
+        hit = l <= lv["price"] - _S().TICK
     k = np.flatnonzero(hit)
     if k.size:
         lv["hitAt"] = int(bars.t[i + k[0]])
@@ -286,7 +343,7 @@ def _day_levels(d: date, bars: _Bars, BR: np.ndarray, HS: np.ndarray, h1: _Bars,
     last_i = bars.idx(end) - 1
     levels: list[dict] = []
     ctx: dict[str, Any] = {"rth0": rth0, "ib1": ib1, "rth1": rth1, "adr": _adr(days, d),
-                           "ethOver": BREAK_RATES["eth"]["overnight"]}
+                           "ethOver": _S().BREAK_RATES["eth"]["overnight"]}
 
     def add(**kw: Any) -> None:
         if _fin(kw.get("price")) is None:
@@ -300,7 +357,7 @@ def _day_levels(d: date, bars: _Bars, BR: np.ndarray, HS: np.ndarray, h1: _Bars,
         return {"levels": levels, "ctx": ctx}
 
     # pETH: yesterday's full session
-    eth = BREAK_RATES["eth"]
+    eth = _S().BREAK_RATES["eth"]
     es, et = _fin(BR[i0, BC["eth_setup"]]), _fin(BR[i0, BC["eth_third"]])
     hi_o = lo_o = None
     if es == 0 and et is not None:
@@ -317,7 +374,7 @@ def _day_levels(d: date, bars: _Bars, BR: np.ndarray, HS: np.ndarray, h1: _Bars,
     ir = bars.idx(rth0)
     if ir < len(bars) and bars.t[ir] < rth1:
         rs, r3 = _fin(BR[ir, BC["rth_setup"]]), _fin(BR[ir, BC["rth_third"]])
-        rth = BREAK_RATES["rth"]
+        rth = _S().BREAK_RATES["rth"]
         hi_r = lo_r = None
         if rs == 0 and r3 is not None:
             hi_r, lo_r = rth["inside"][THIRD[int(r3)]]
@@ -348,7 +405,7 @@ def _day_levels(d: date, bars: _Bars, BR: np.ndarray, HS: np.ndarray, h1: _Bars,
     if iib < len(bars) and bars.t[iib] < rth1 and _fin(BR[iib, BC["ib_h"]]) is not None:
         ibh, ibl, ibm, side = (float(BR[iib, BC[k]]) for k in ("ib_h", "ib_l", "ib_mid", "ib_side"))
         s_ = "above" if side >= 0 else "below"
-        ibr = BREAK_RATES["ib"]
+        ibr = _S().BREAK_RATES["ib"]
         ctx["ib"] = {"high": ibh, "low": ibl, "mid": ibm, "side": int(side)}
         for key, label, odds in (("h", "IB high", ibr[s_][0]), ("l", "IB low", ibr[s_][1])):
             add(id=f"ib_{key}", group="IB", label=label, price=ibh if key == "h" else ibl, frm=ib1, until=rth1, odds=odds,
@@ -389,7 +446,7 @@ def _day_levels(d: date, bars: _Bars, BR: np.ndarray, HS: np.ndarray, h1: _Bars,
             continue
         for k in (0.5, 1.0):
             for sgn, side_i in ((1, 0), (-1, 1)):
-                odds = SDEV_HITS[key]["0.5" if k == 0.5 else "1"][side_i]
+                odds = _S().SDEV_HITS[key]["0.5" if k == 0.5 else "1"][side_i]
                 mark = "+" if sgn > 0 else "-"
                 add(id=f"{key}_{'u' if sgn > 0 else 'd'}{k:g}", group="SDEV", label=f"{name} {mark}{k:g} SD",
                     price=round(op * (1 + sgn * k * sd / 100) * 4) / 4, frm=a, until=b, odds=odds,
@@ -408,11 +465,11 @@ def _day_levels(d: date, bars: _Bars, BR: np.ndarray, HS: np.ndarray, h1: _Bars,
         seen.add(a)
         hod = local.hour
         lab = datetime.fromtimestamp(a / 1000, PT).strftime("%-I %p")
-        sl = HOUR_SLICES.get(str(hod))
+        sl = _S().HOUR_SLICES.get(str(hod))
         setup = HS[i, HC["setup"]] == 1
         for key, label, col in (("hh", "high", "ph"), ("hl", "low", "pl")):
             first20 = f" Sweeps here come in the first 20 min {sl['high' if key == 'hh' else 'low'][0]:.0f}% of the time" if sl else ""
-            odds = HOUR_SWEEP.get(hod, [None, None])[0 if key == "hh" else 1] if setup else None
+            odds = _S().HOUR_SWEEP.get(hod, [None, None])[0 if key == "hh" else 1] if setup else None
             took = f" This hour takes it {odds}% of the time." if odds is not None else ""
             add(id=f"{key}_{a}", group="Hour", label=f"{lab} prior-hour {label}", price=HS[i, HC[col]], frm=a,
                 until=a + HOUR_MS, hour=True, odds=odds, color=COLORS["hour"],
@@ -434,20 +491,20 @@ def _day_levels(d: date, bars: _Bars, BR: np.ndarray, HS: np.ndarray, h1: _Bars,
                     add(id=f"hz_{a}_f{e}", group="Hour zones", label=f"{lab} MFE {pct}", price=round(HS[j, HC[f"follow_{e}"]] * 4) / 4,
                         frm=int(rv), until=a + HOUR_MS, odds=odds, carry=False, color=COLORS["follow"],
                         why=f"Back at the hour open. {odds:g}% of these hours then run this far past it on the other side (MFE)")
-        rates = HOUR_RATES.get(str(hod), {})
+        rates = _S().HOUR_RATES.get(str(hod), {})
         add(id=f"ho_{a}", group="Hour", label=f"Back to {lab} open", price=HS[i, HC["open"]], frm=a,
             until=a + HOUR_MS, hour=True, kind="hour_open", segs=rates.get("segs"), rev=rates.get("rev"), color=COLORS["open"])
 
     # Opens (Current Day OHL): back to the day (Globex) open from 6:30, to the RTH open from 7:30
     if bars.idx(rth0) < len(bars) and bars.t[bars.idx(rth0)] < rth1:
         add(id="day_open", group="Opens", label="Back to day open", price=bars.o[i0], frm=rth0, until=rth1,
-            odds=OPEN_BACK["day"], touch=True, carry=False, color=COLORS["open"],
-            why=f"Globex open (3 PM). RTH trades back to it {OPEN_BACK['day']}% of days")
+            odds=_S().OPEN_BACK["day"], touch=True, carry=False, color=COLORS["open"],
+            why=f"Globex open (3 PM). RTH trades back to it {_S().OPEN_BACK['day']}% of days")
         r0 = bars.idx(rth0)
         if bars.idx(ib1) < len(bars) and bars.t[bars.idx(ib1)] < rth1:
             add(id="rth_open", group="Opens", label="Back to RTH open", price=bars.o[r0], frm=ib1, until=rth1,
-                odds=OPEN_BACK["rth"], touch=True, carry=False, color=COLORS["open"],
-                why=f"6:30 open. After the IB, price comes back to it {OPEN_BACK['rth']}% of days")
+                odds=_S().OPEN_BACK["rth"], touch=True, carry=False, color=COLORS["open"],
+                why=f"6:30 open. After the IB, price comes back to it {_S().OPEN_BACK['rth']}% of days")
 
     # ALN sessions: Asia and London ranges; at 5 AM the pattern sets the London break odds
     asia_a, asia_b = _pt(d, 17, day_offset=-1), _pt(d, 23, day_offset=-1)
@@ -462,7 +519,7 @@ def _day_levels(d: date, bars: _Bars, BR: np.ndarray, HS: np.ndarray, h1: _Bars,
         if il - ib_ > 60 and il < len(bars):
             lh, ll = float(bars.h[ib_:il].max()), float(bars.l[ib_:il].min())
             pat = _pattern(ah, al, lh, ll)
-            stats = ALN_STATS[f"P{pat}"]
+            stats = _S().ALN_STATS[f"P{pat}"]
             ctx["aln"] = {"pattern": pat, "text": ALN_TEXT[pat]}
             for key, label, p in (("h", "high", lh), ("l", "low", ll)):
                 odds = stats[label]
@@ -490,9 +547,9 @@ def _day_levels(d: date, bars: _Bars, BR: np.ndarray, HS: np.ndarray, h1: _Bars,
             for m_ in (0.5, 1.0, 1.5):
                 for sgn, side_i in ((1, 0), (-1, 1)):
                     mark = "+" if sgn > 0 else "-"
-                    odds = MTF_HITS[tf][f"{m_:g}"][side_i]
+                    odds = _S().MTF_HITS[tf][f"{m_:g}"][side_i]
                     band = float(MT[k, MC[f"{tf}_{mark}{m_:g}"]])
-                    if (sgn > 0 and ph >= band + TICK) or (sgn < 0 and pl <= band - TICK):
+                    if (sgn > 0 and ph >= band + _S().TICK) or (sgn < 0 and pl <= band - _S().TICK):
                         continue
                     add(id=f"mtf_{tf}_{'u' if sgn > 0 else 'd'}{m_:g}", group=f"MTF {tf.upper()}",
                         label=f"{name} {mark}{m_:g} SD", price=round(MT[k, MC[f'{tf}_{mark}{m_:g}']] * 4) / 4,
@@ -526,7 +583,7 @@ def _day_levels(d: date, bars: _Bars, BR: np.ndarray, HS: np.ndarray, h1: _Bars,
             continue
         r = j - 1
         o = float(out[r, cols["open"]])
-        st_ = TBR_ODDS[key]
+        st_ = _S().TBR_ODDS[key]
         grp = "AMTB" if key == "am" else "TBR"
         tag = name if key == "am" else f"{name} TBR"
         if key != "ny":  # NY shares the 8:00 open with AMTB
@@ -541,7 +598,7 @@ def _day_levels(d: date, bars: _Bars, BR: np.ndarray, HS: np.ndarray, h1: _Bars,
             continue
         t_at = int(out[r, cols["touch_at"]])
         hr = min((t_at - a) // HOUR_MS, 7)
-        rate = TBR_RATES.get(key, {}).get(f"{int(side)},{hr}")
+        rate = _S().TBR_RATES.get(key, {}).get(f"{int(side)},{hr}")
         back = rate[0] if rate else st_["back"]
         add(id=f"tbr_{key}_back", group=grp, label=f"{tag} back to open", price=o, frm=t_at + 60_000, until=b,
             odds=back, touch=True, carry=False, color=COLORS["open"],
@@ -637,19 +694,33 @@ def _shell(d: date) -> dict:
             "start": start, "end": end, "sessions": sessions}
 
 
-def build_plan(m1_rows: np.ndarray, h1_rows: np.ndarray, d: date, h1_long: np.ndarray | None = None) -> dict:
+def build_plan(m1_rows: np.ndarray, h1_rows: np.ndarray, d: date, h1_long: np.ndarray | None = None,
+               symbol: str | None = None) -> dict:
     """The Game Plan for trading day ``d`` from 1-minute bars (~5 weeks before it, for the TBR
     SDEVs), hourly bars (~6 weeks, for the SDEV, average day range and last week) and,
     optionally, ~14 months of hourly bars for the weekly and monthly SDEV bands."""
+    if instrument_for(symbol or "ES").trades_around_the_clock:
+        # Hyperliquid trades 24/7; the stats count CME hours only, so plan on those bars alone.
+        m1_rows, h1_rows = _cme_rows(m1_rows), _cme_rows(h1_rows)
+        h1_long = _cme_rows(h1_long) if h1_long is not None else None
+    token = _STATS.set(stats_for(symbol, m1_rows))
+    try:
+        return _build_plan(m1_rows, h1_rows, d, h1_long)
+    finally:
+        _STATS.reset(token)
+
+
+def _build_plan(m1_rows: np.ndarray, h1_rows: np.ndarray, d: date, h1_long: np.ndarray | None) -> dict:
+    S = _S()
     bars, h1 = _Bars(m1_rows), _Bars(h1_rows)
     days = _cme_days(h1)
     X: dict[str, Any] = {}
     if len(bars):
         args = (bars.t, bars.o, bars.h, bars.l, bars.c)
-        BR = breaks(*args)
-        HS = hour_stats(*args)
-        X["AM"] = am_tbr(*args)
-        X["TB"] = {k: session_fade(*args, k) for k in TBR_SESSIONS if k != "am"}
+        BR = breaks(*args, tick=S.TICK, family=S.family)
+        HS = hour_stats(*args, tick=S.TICK, family=S.family)
+        X["AM"] = am_tbr(*args, family=S.family)
+        X["TB"] = {k: session_fade(*args, k, family=S.family) for k in TBR_SESSIONS if k != "am"}
     else:
         BR = HS = np.zeros((0, 64))
     hl = _Bars(h1_long if h1_long is not None else h1_rows)
@@ -699,5 +770,6 @@ def build_plan(m1_rows: np.ndarray, h1_rows: np.ndarray, d: date, h1_long: np.nd
         lv.pop("carry", None)
         lv.pop("touch", None)
         lv.setdefault("never", False)
-    today["source"] = "ES 2016-2025"
+    today["source"] = S.source
+    today["market"] = {"symbol": S.symbol, "family": S.family, "tick": S.TICK}
     return today

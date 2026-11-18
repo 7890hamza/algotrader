@@ -31,6 +31,7 @@ from zoneinfo import ZoneInfo
 from ..core.bars import BarTensor
 from ..core.spec import IndicatorSpec
 from ..core.tensor import Tensor
+from ..instruments import family_for, instrument_for, run_on_session_rows
 from .base import IndicatorBase
 from .seiz_frames import TIMEFRAMES, frame_keys, in_session
 from .seiz_tables import TABLES
@@ -53,11 +54,11 @@ DEFAULT_TF = "1h"
 
 
 def market_for(asset: object, choice: str = "auto") -> str:
+    """"NQ" for NQ / MNQ / XYZ100 (and other Nasdaq-100 names), else "ES"; see ``instruments``."""
     choice = str(choice or "auto").upper()
     if choice in TABLES:
         return choice
-    name = str(asset or "").upper()
-    return "NQ" if any(k in name for k in NQ_NAMES) else "ES"
+    return family_for(asset)
 
 
 def parse_tf(raw: object) -> str:
@@ -203,7 +204,8 @@ class SEIZ(IndicatorBase):
             "stat_zone": {"type": "string", "default": "off", "options": ["off", "on"]},
             "dashboard": {"type": "string", "default": "on", "options": ["on", "off"]},
             "market": {"type": "string", "default": "auto", "options": ["auto", "NQ", "ES"]},
-            "tick": {"type": "float", "default": 0.25},
+            # 0 = the chart instrument's own tick (0.25 on CME index futures, price-based on Hyperliquid)
+            "tick": {"type": "float", "default": 0},
         },
         outputs=OUTPUTS,
         required_fields=["open", "high", "low", "close"],
@@ -227,12 +229,19 @@ class SEIZ(IndicatorBase):
         n_time, n_assets = data.data.shape[0], data.data.shape[1]
         out = np.full((n_time, n_assets, len(OUTPUTS)), np.nan, dtype=np.float64)
         for a in range(n_assets):
-            out[:, a, :] = seiz(
-                epoch_ms, *(data.data[:, a, idx[f]] for f in ("open", "high", "low")),
-                market=market_for(data.assets[a], p["market"]), zone_tf=parse_tf(p["zone_tf"]),
-                auto_switch=_on(p["auto_switch"]), stat_zone=_on(p["stat_zone"]),
-                dashboard=_on(p["dashboard"]), tick=float(p["tick"]),
-                close=data.data[:, a, ci] if ci is not None else None,
+            asset = data.assets[a]
+            cols = [data.data[:, a, idx[f]] for f in ("open", "high", "low")]
+            if ci is not None:
+                cols.append(data.data[:, a, ci])
+            tick = float(p["tick"] or 0) or instrument_for(asset).tick_for(cols[-1])
+            out[:, a, :] = run_on_session_rows(
+                asset, epoch_ms, cols, len(OUTPUTS),
+                lambda t, o, h, l, *c, asset=asset, tick=tick: seiz(
+                    t, o, h, l,
+                    market=market_for(asset, p["market"]), zone_tf=parse_tf(p["zone_tf"]),
+                    auto_switch=_on(p["auto_switch"]), stat_zone=_on(p["stat_zone"]),
+                    dashboard=_on(p["dashboard"]), tick=tick, close=c[0] if c else None,
+                ),
             )
         return Tensor(
             data=out,

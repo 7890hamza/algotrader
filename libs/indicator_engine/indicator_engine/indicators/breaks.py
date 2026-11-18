@@ -1,4 +1,4 @@
-"""Breaks: IB, RTH and ETH breaks (nqstats.com/ib-breaks and /rth_breaks) measured on ES.
+"""Breaks: IB, RTH and ETH breaks (nqstats.com/ib-breaks and /rth_breaks) measured on ES and NQ.
 
 All windows are New York time (the same clock times as Pacific + 3 hours):
 
@@ -6,7 +6,7 @@ All windows are New York time (the same clock times as Pacific + 3 hours):
 * IB   09:30-10:30 (6:30-7:30 AM Pacific), the first RTH hour.
 * ETH  18:00-17:00 (3 PM-2 PM Pacific), the full Globex day. pETH = the previous one.
 
-A break (a "hit") is a trade at least 1 tick past the level.
+A break (a "hit") is a trade at least 1 tick past the level (the chart instrument's own tick).
 
 Outputs, NaN where a part is off or has no data:
 
@@ -26,7 +26,7 @@ IB
   ``ib_valid``              1 when the 10:30 bar opens inside the IB (the stats' filter)
   ``ib_hit_h`` / ``_l``     epoch ms of the first hit, from that bar on
   ``ib_ext_med`` / ``ib_ext_p75``  after the first break: how far price usually runs past
-                            the broken side (0.62 and 1.18 IB ranges, ES 2016-2025)
+                            the broken side (ES 0.62 / 1.18 IB ranges, NQ 0.56 / 0.97; 2016-2025)
 
 ETH (on every bar of each ETH day that has a previous ETH day)
   ``peth_h`` / ``peth_l``, ``eth_setup`` (+1 / -1 open outside, 0 inside), ``eth_third``,
@@ -43,6 +43,7 @@ Retracement (RTH bars after the IB window; the IB is the first leg; see ``_retra
 
 from __future__ import annotations
 
+from functools import partial
 from typing import Dict
 
 import numpy as np
@@ -51,6 +52,7 @@ from zoneinfo import ZoneInfo
 from ..core.bars import BarTensor
 from ..core.spec import IndicatorSpec
 from ..core.tensor import Tensor
+from ..instruments import family_for, instrument_for, run_on_session_rows
 from .base import IndicatorBase
 from .session_sdev import MINUTES_PER_DAY, MS_PER_DAY, MS_PER_MINUTE, _local_ms, to_epoch_ms
 
@@ -60,6 +62,7 @@ RTH_START, RTH_END, IB_END = 9 * 60 + 30, 16 * 60, 10 * 60 + 30
 ETH_START, ETH_END = 18 * 60, 17 * 60
 # How far past the broken IB side price ran (in IB ranges), ES 2016-2025: median, 75th pct.
 IB_EXTENSION = (0.62, 1.18)
+IB_EXTENSION_BY_FAMILY = {"ES": IB_EXTENSION, "NQ": (0.56, 0.97)}  # NQ: NinjaTrader 1-minute
 PARTS = ("rth", "ib", "eth", "targets", "retrace")
 DEFAULT_SHOW = "rth, ib, eth, targets, retrace"
 RETRACE_ZONE = (0.4, 0.6)
@@ -206,9 +209,11 @@ def breaks(
     *,
     show: str | set[str] = DEFAULT_SHOW,
     tick: float = TICK,
+    family: str = "ES",
 ) -> np.ndarray:
     """Return an array (time, len(OUTPUTS)); see the module docstring."""
     parts = show if isinstance(show, set) else parse_show(show)
+    ext = IB_EXTENSION_BY_FAMILY[family]
     n = len(epoch_ms)
     out = np.full((n, len(OUTPUTS)), np.nan, dtype=np.float64)
     if n == 0:
@@ -264,8 +269,8 @@ def breaks(
                 if "targets" in parts and first is not None:
                     j, side = first
                     level = ibh if side == 1 else ibl
-                    out[post[j:], COL["ib_ext_med"]] = level + side * IB_EXTENSION[0] * rng
-                    out[post[j:], COL["ib_ext_p75"]] = level + side * IB_EXTENSION[1] * rng
+                    out[post[j:], COL["ib_ext_med"]] = level + side * ext[0] * rng
+                    out[post[j:], COL["ib_ext_p75"]] = level + side * ext[1] * rng
 
     if "eth" in parts:
         in_eth = (minute >= ETH_START) | (minute < ETH_END)
@@ -284,17 +289,19 @@ def breaks(
 
 
 class Breaks(IndicatorBase):
-    """IB, RTH and ETH breaks with the ES odds of each line getting hit."""
+    """IB, RTH and ETH breaks with the ES / NQ odds of each line getting hit."""
 
     spec = IndicatorSpec(
         id="breaks",
         name="Breaks",
         description=(
             "IB (first RTH hour), prior RTH and prior ETH highs / lows, where today opened "
-            "and which lines got hit, with the ES 2016-2025 odds of each break."
+            "and which lines got hit, with the 2016-2025 odds of each break for the chart's index "
+            "(ES or NQ) and its own tick size."
         ),
         parameters={
             "show": {"type": "string", "default": DEFAULT_SHOW},
+            "market": {"type": "string", "default": "auto", "options": ["auto", "ES", "NQ"]},
         },
         outputs=OUTPUTS,
         required_fields=["open", "high", "low", "close"],
@@ -318,8 +325,12 @@ class Breaks(IndicatorBase):
         n_time, n_assets = data.data.shape[0], data.data.shape[1]
         out = np.full((n_time, n_assets, len(OUTPUTS)), np.nan, dtype=np.float64)
         for a in range(n_assets):
-            out[:, a, :] = breaks(
-                epoch_ms, *(data.data[:, a, idx[f]] for f in ("open", "high", "low", "close")), show=parts
+            asset = data.assets[a]
+            series = [data.data[:, a, idx[f]] for f in ("open", "high", "low", "close")]
+            out[:, a, :] = run_on_session_rows(
+                asset, epoch_ms, series, len(OUTPUTS),
+                partial(breaks, show=parts, tick=instrument_for(asset).tick_for(series[3]),
+                        family=family_for(asset, merged.get("market"))),
             )
         return Tensor(
             data=out,

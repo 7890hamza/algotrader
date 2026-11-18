@@ -2,7 +2,7 @@ import type { IndicatorDataPoint, JsonObject } from '@/types/contracts';
 
 import { formatClock, formatPrice, type SessionBox, type SessionTag } from './alnGuide';
 
-/** ES 2016-2025 rates for one New York hour (see indicator-api HOUR_RATES). */
+/** Rates for one New York hour, ES or NQ 2016-2025 for the chart's index (see indicator-api HOUR_RATES). */
 export interface HourRates {
   n: number;
   rev: number;

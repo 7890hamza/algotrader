@@ -29,6 +29,7 @@ from zoneinfo import ZoneInfo
 from ..core.bars import BarTensor
 from ..core.spec import IndicatorSpec
 from ..core.tensor import Tensor
+from ..instruments import run_on_session_rows
 from .base import IndicatorBase
 
 MULTIPLIERS = (0.25, 0.5, 0.75, 1.0, 1.25, 1.5, 1.75, 2.0, 2.5, 3.0)
@@ -262,11 +263,10 @@ class SessionSDEV(IndicatorBase):
         n_time, n_assets = data.data.shape[0], data.data.shape[1]
         out = np.full((n_time, n_assets, len(OUTPUTS)), np.nan, dtype=np.float64)
         for a in range(n_assets):
-            out[:, a, :] = session_levels(
-                epoch_ms,
-                data.data[:, a, open_idx],
-                data.data[:, a, close_idx],
-                **kwargs,  # type: ignore[arg-type]
+            # 24/7 markets (Hyperliquid) use only the bars when CME trades, like the futures.
+            out[:, a, :] = run_on_session_rows(
+                data.assets[a], epoch_ms, [data.data[:, a, open_idx], data.data[:, a, close_idx]],
+                len(OUTPUTS), lambda t, o, c: session_levels(t, o, c, **kwargs),  # type: ignore[arg-type]
             )
         return Tensor(
             data=out,
