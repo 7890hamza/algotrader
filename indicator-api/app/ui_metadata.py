@@ -508,6 +508,14 @@ def _seiz_metadata() -> dict:
     return {"overlay": True, "outputs": outputs, "guide": guide}
 
 
+def _setups_metadata() -> dict:
+    """Setups is drawn by its own page (frontend views/SetupsView.vue), never on the main chart."""
+    from indicator_engine.indicators.setups import OUTPUTS
+
+    return {"overlay": True, "outputs": {k: {"type": "data", "label": k} for k in OUTPUTS},
+            "guide": {"kind": "setups"}}
+
+
 def _fmp_metadata() -> dict:
     """Fractal Manipulation Projections draws its own rails (frontend utils/chart/fmp.ts)."""
     from indicator_engine.indicators.fmp import OUTPUTS, SLICES
@@ -770,6 +778,7 @@ UI_METADATA: dict[str, dict] = {
     "mtf_sdev": _mtf_sdev_metadata(),
     "seiz": _seiz_metadata(),
     "fmp": _fmp_metadata(),
+    "setups": _setups_metadata(),
 }
 
 

@@ -111,6 +111,13 @@
       <n-button
         size="small"
         round
+        secondary
+        data-testid="open-setups"
+        @click="router.push('/setups')"
+      >Setups</n-button>
+      <n-button
+        size="small"
+        round
         :type="chartLayout === 'single' ? 'primary' : 'default'"
         :secondary="chartLayout !== 'single'"
         data-testid="chart-layout-single"
@@ -143,6 +150,7 @@
 
 <script setup lang="ts">
 import { computed } from 'vue';
+import { useRouter } from 'vue-router';
 import { NButton, NIcon } from 'naive-ui';
 
 import {
@@ -157,6 +165,8 @@ import { useDomStore } from '@/stores/domStore';
 import { useGamePlanStore } from '@/stores/gamePlanStore';
 import { useModalStore } from '@/stores/modalStore';
 import type { ChartLayout } from '@/utils/chartPane';
+
+const router = useRouter();
 
 defineOptions({
   name: 'TheTopBar',

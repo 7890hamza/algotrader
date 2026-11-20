@@ -31,6 +31,7 @@ from .indicators import (
     MtfSDEV,
     SEIZ,
     FMP,
+    Setups,
     SessionSDEV,
 )
 
@@ -60,6 +61,7 @@ def _create_registry() -> IndicatorRegistry:
             MtfSDEV(),
             SEIZ(),
             FMP(),
+            Setups(),
         ]
     )
     try:
