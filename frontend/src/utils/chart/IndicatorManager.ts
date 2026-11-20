@@ -17,6 +17,7 @@ import { mtfLayout, readBreaksGuide } from './breaks';
 import { buildRangeBar, type RangeBar } from './rangeBar';
 import { layoutFmp, parseList, readFmpGuide, type CurveLine } from './fmp';
 import { layoutSeiz, readSeizGuide } from './seiz';
+import { setupBoxes, tradesFrom } from '@/utils/setups';
 import type { RetraceLayer } from './retrace';
 import { layoutHourStats, readHourSlices, readHourStatsGuide } from './hourStats';
 import {
@@ -102,7 +103,8 @@ function drawsOnPrice(info: IndicatorInfo): boolean {
     readGuideConfig(info.guide) !== null ||
     isEngulfingGuide(info.guide) ||
     readSeizGuide(info.guide) !== null ||
-    readFmpGuide(info.guide) !== null
+    readFmpGuide(info.guide) !== null ||
+    info.guide?.kind === 'setups'
   );
 }
 
@@ -248,6 +250,12 @@ export class IndicatorManager {
         barSeconds: this.barSeconds(points),
       });
       this.chartManager.setSessionLevels(id, PRICE_SERIES_KEY, segments, undefined, [], [], [], [], null, null, lines);
+      return;
+    }
+    if (indicator.info.guide?.kind === 'setups') {
+      const num = (key: string): number => Number(indicator.parameters[key]?.value ?? indicator.parameters[key]?.default);
+      const boxes = setupBoxes(tradesFrom(points), num('target') || 10, num('stop') || 3);
+      this.chartManager.setSessionLevels(id, PRICE_SERIES_KEY, [], undefined, boxes, []);
       return;
     }
     const seiz = readSeizGuide(indicator.info.guide);

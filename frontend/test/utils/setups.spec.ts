@@ -57,3 +57,14 @@ describe('stacked stats', () => {
     expect(s[0].labels[0]).toBe('A 30%');
   });
 });
+
+describe('setup boxes on the chart', () => {
+  it('draws target and stop boxes without giving away the result', async () => {
+    const { setupBoxes } = await import('@/utils/setups');
+    const t = { id: 'D' as const, dir: -1 as const, entryMs: 1_000_000, exitMs: 1_600_000, entry: 7040, pts: 9.5, how: 'target' as const, levels: [], day: '2026-11-20' };
+    const [target, stop] = setupBoxes([t]);
+    expect([target.high, target.low, stop.high, stop.low]).toEqual([7040, 7030, 7043, 7040]);
+    expect(target.title).toBe('D ▼');
+    expect(JSON.stringify([target, stop])).not.toContain('9.5');
+  });
+});

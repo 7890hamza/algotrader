@@ -111,10 +111,18 @@
       <n-button
         size="small"
         round
+        :type="replay.active ? 'warning' : 'default'"
+        secondary
+        data-testid="open-replay"
+        @click="replay.pickerOpen = !replay.pickerOpen"
+      >Replay</n-button>
+      <n-button
+        size="small"
+        round
         secondary
         data-testid="open-setups"
         @click="router.push('/setups')"
-      >Setups</n-button>
+      >Setups page</n-button>
       <n-button
         size="small"
         round
@@ -151,6 +159,8 @@
 <script setup lang="ts">
 import { computed } from 'vue';
 import { useRouter } from 'vue-router';
+
+import { useReplayStore } from '@/stores/replayStore';
 import { NButton, NIcon } from 'naive-ui';
 
 import {
@@ -167,6 +177,7 @@ import { useModalStore } from '@/stores/modalStore';
 import type { ChartLayout } from '@/utils/chartPane';
 
 const router = useRouter();
+const replay = useReplayStore();
 
 defineOptions({
   name: 'TheTopBar',

@@ -164,3 +164,28 @@ export function openStacks(levels: readonly StatLevel[], t: number, price: numbe
   }
   return out.sort((a, b) => a.away - b.away);
 }
+
+// ---- Drawing trades on the regular chart ----
+
+/** Dollars per point for one contract. */
+export const POINT_VALUE: Record<string, number> = { ES: 50, MES: 5, NQ: 20, MNQ: 2 };
+
+/**
+ * Target (green) and stop (red) boxes from entry to exit. The result is left off the chart on
+ * purpose, so a replay doesn't give it away; the Setups panel shows it once the trade is done.
+ */
+export function setupBoxes(trades: readonly SetupTrade[], target = 10, stop = 3): import('./chart/alnGuide').SessionBox[] {
+  const out: import('./chart/alnGuide').SessionBox[] = [];
+  for (const t of trades) {
+    const s = SETUP_BY_ID[t.id];
+    const startTime = Math.floor(t.entryMs / 1000);
+    const endTime = Math.max(startTime, Math.floor(t.exitMs / 1000));
+    const tgt = t.entry + target * t.dir; const stp = t.entry - stop * t.dir;
+    const hover = [`${t.id} ${t.dir > 0 ? 'long' : 'short'} · ${s.name}`, s.why, `Entry ${t.entry.toFixed(2)} · target ${tgt.toFixed(2)} · stop ${stp.toFixed(2)}`];
+    out.push({ id: `setup-${t.id}-${startTime}-t`, startTime, endTime, high: Math.max(t.entry, tgt), low: Math.min(t.entry, tgt),
+      color: '#2fbf8f', label: '', fillOpacity: 0.22, noLabels: true, title: `${t.id} ${t.dir > 0 ? '▲' : '▼'}`, hoverLines: hover });
+    out.push({ id: `setup-${t.id}-${startTime}-s`, startTime, endTime, high: Math.max(t.entry, stp), low: Math.min(t.entry, stp),
+      color: '#e0566c', label: '', fillOpacity: 0.28, noLabels: true, hoverLines: hover });
+  }
+  return out;
+}

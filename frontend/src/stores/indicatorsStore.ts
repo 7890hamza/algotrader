@@ -1,4 +1,6 @@
 import { defineStore } from 'pinia';
+
+import { IS_REPLAY } from '@/utils/replay';
 import { computed, markRaw, reactive, ref } from 'vue';
 
 import { requestIndicator as requestIndicatorFromApi } from '@/api/indicatorClient';
@@ -701,6 +703,7 @@ export const useIndicatorsStore = defineStore('indicators', () => {
       parameters = {},
     }: IndicatorLiveSubscriptionInput,
   ): Promise<void> {
+    if (IS_REPLAY) return; // Replay plays back stored bars: no live indicator updates
     if (!_id || !symbol || !timeframe || indicatorId === null || indicatorId === undefined) return;
 
     const payload: IndicatorLiveSubscription = {

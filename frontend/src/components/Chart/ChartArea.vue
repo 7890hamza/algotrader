@@ -73,6 +73,8 @@
     <aln-guide-overlay :time-zone="chartTimeZone" />
     <tbr-stats-overlay />
     <seiz-dashboard />
+    <setups-panel />
+    <replay-bar />
     <am-tbr-guide-overlay :time-zone="chartTimeZone" />
 
     <div>
@@ -143,6 +145,11 @@ import Indicator from "@/components/Chart/Indicator/Indicator.vue";
 import AlnGuideOverlay from "@/components/Chart/AlnGuideOverlay.vue";
 import TbrStatsOverlay from "@/components/Chart/TbrStatsOverlay.vue";
 import SeizDashboard from "@/components/Chart/SeizDashboard.vue";
+import SetupsPanel from "@/components/Chart/SetupsPanel.vue";
+import ReplayBar from "@/components/Chart/ReplayBar.vue";
+import { useReplayStore } from "@/stores/replayStore";
+import { IS_REPLAY, REPLAY_FETCH_LIMIT, replayEndMs } from "@/utils/replay";
+import { ReplayCurtainPrimitive } from "@/utils/chart/replayCurtainPrimitive";
 import AmTbrGuideOverlay from "@/components/Chart/AmTbrGuideOverlay.vue";
 import { CloseCircleOutline } from "@/icons";
 import PositionToolCard from "@/components/Chart/PositionToolCard.vue";
@@ -202,6 +209,7 @@ interface ChartAreaData {
   indicatorFlushRafId: number | null;
   pendingIndicatorMessages: Map<string, IndicatorUpdateMessage>;
   ohlcSeriesRef: ManagedSeriesApi | null;
+  replayCurtain: ReplayCurtainPrimitive | null;
   lastWheelTs: number;
   wheelSettleTimer: ReturnType<typeof setTimeout> | null;
   candlesFetchLimit: number;
@@ -239,6 +247,8 @@ export default defineComponent({
     AlnGuideOverlay,
     TbrStatsOverlay,
     SeizDashboard,
+    SetupsPanel,
+    ReplayBar,
     AmTbrGuideOverlay,
     CloseCircleOutline,
     PositionToolCard,
@@ -278,10 +288,11 @@ export default defineComponent({
       indicatorFlushRafId: null,
       pendingIndicatorMessages: new Map(),
       ohlcSeriesRef: null,
+      replayCurtain: null,
       lastWheelTs: 0,
       wheelSettleTimer: null,
-      candlesFetchLimit: 500,
-      indicatorBatchSize: 500,
+      candlesFetchLimit: IS_REPLAY ? REPLAY_FETCH_LIMIT : 500,
+      indicatorBatchSize: IS_REPLAY ? REPLAY_FETCH_LIMIT : 500,
       shouldScrollToRealTime: false,
       liveGapFetchedFrom: null,
       indicatorMessageHandler: null,
@@ -459,6 +470,9 @@ export default defineComponent({
 
   mounted(): void {
     this.initializeChartComponent();
+    if (IS_REPLAY) {
+      this.$watch(() => useReplayStore().cursorMs, () => this.renderReplay(true));
+    }
   },
 
   beforeUnmount(): void {
@@ -513,11 +527,12 @@ export default defineComponent({
       });
 
       return {
-        subscribeCandles: (key) => wsService.send("subscribeCandles", {
+        // Replay plays back stored bars: no live candles.
+        subscribeCandles: (key) => IS_REPLAY ? undefined : wsService.send("subscribeCandles", {
           symbol: key.symbol,
           timeframe: key.timeframe,
         }),
-        unsubscribeCandles: (key) => wsService.send("unsubscribeCandles", {
+        unsubscribeCandles: (key) => IS_REPLAY ? undefined : wsService.send("unsubscribeCandles", {
           symbol: key.symbol,
           timeframe: key.timeframe,
         }),
@@ -530,9 +545,14 @@ export default defineComponent({
         fetchCandles: (key) => fetchHistoricalCandles(key.symbol, key.timeframe, {
           limit: this.candlesFetchLimit,
           exchange: key.exchange,
+          ...(IS_REPLAY ? { endMs: replayEndMs() } : {}),
         }),
         renderCandles: (_key, candles) => {
           this.candlesticksStore.replace(candles);
+          if (IS_REPLAY) {
+            this.renderReplay(true);
+            return;
+          }
           this.renderCandlesticks(this.candlesticksStore.data, {
             scrollToRealtime: this.shouldScrollToRealTime,
           });
@@ -558,7 +578,8 @@ export default defineComponent({
           this.candlesticksStore.prepend(candles);
         },
         renderOlderCandles: (key) => {
-          this.renderCandlesticks(this.candlesticksStore.data);
+          if (IS_REPLAY) this.renderReplay(false);
+          else this.renderCandlesticks(this.candlesticksStore.data);
           void this.indicatorsStore.ensureCoverageForAll(
             key.symbol,
             key.timeframe,
@@ -917,7 +938,25 @@ export default defineComponent({
       }
     },
 
+    /** Replay: draw bars up to the cursor and cover what comes after. */
+    renderReplay(scrollToCursor: boolean): void {
+      const replay = useReplayStore();
+      const all = this.candlesticksStore.data;
+      replay.barTimes = all.map((c) => c.timestamp_ms);
+      const shown = all.filter((c) => c.timestamp_ms <= replay.cursorMs);
+      this.renderCandlesticks(shown.length ? shown : all.slice(0, 1));
+      const series = this.ohlcSeriesRef;
+      if (series && !this.replayCurtain) {
+        this.replayCurtain = markRaw(new ReplayCurtainPrimitive("#131722"));
+        series.attachPrimitive(this.replayCurtain);
+      }
+      const last = shown[shown.length - 1];
+      this.replayCurtain?.setLastTime(last ? Math.floor(last.timestamp_ms / 1000) : null);
+      if (scrollToCursor || replay.playing) this.scrollToRealTime();
+    },
+
     updateCurrentCandle(candle: CandleUpdateMessage): void {
+      if (IS_REPLAY) return;
       this.backfillLiveGap(candle);
       this.candlesticksStore.updateCandle(candle);
       this.updateCandlestick({

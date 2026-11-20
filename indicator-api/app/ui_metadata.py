@@ -509,7 +509,7 @@ def _seiz_metadata() -> dict:
 
 
 def _setups_metadata() -> dict:
-    """Setups is drawn by its own page (frontend views/SetupsView.vue), never on the main chart."""
+    """Setups draws its trades as boxes (frontend utils/setups.ts) with a totals panel."""
     from indicator_engine.indicators.setups import OUTPUTS
 
     return {"overlay": True, "outputs": {k: {"type": "data", "label": k} for k in OUTPUTS},
