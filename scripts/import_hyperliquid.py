@@ -4,6 +4,10 @@ Reads the CSV the AWS export made (symbol,time_ms,open,high,low,close,volume,tra
 through the database API, so the "CME closed" overlay and the catch-up trades can go back to
 each market's first day. Bars are saved by timestamp, so running it again is safe.
 
+The default file holds xyz:XYZ100 (from Oct 13, 2025) and xyz:SP500 (from Mar 18, 2026). Before
+SP500 launched, its rows come from Dreamcash's cash:USA500 (Jan 20 - Mar 17, 2026), the S&P perp
+that tracked ES most closely (15-minute moves 0.988 correlated); it trades about 6 pts above SP500.
+
     python scripts/import_hyperliquid.py [path-to-csv.gz]
 """
 
@@ -19,7 +23,7 @@ import time
 import urllib.error
 import urllib.request
 
-DEFAULT = os.path.expanduser(r"~\Downloads\Hyperliquid data 2026-11-20\hyperliquid_xyz_1m_2025-10-13_2026-11-19.csv.gz")
+DEFAULT = os.path.expanduser(r"~\Downloads\Hyperliquid data 2026-11-20\hyperliquid_1m_XYZ100_SP500.csv.gz")
 
 
 def call(url: str, body: dict | None = None) -> object:
