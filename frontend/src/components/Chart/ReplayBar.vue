@@ -34,6 +34,7 @@
         </optgroup>
       </select>
       <input id="replay-jump" v-model="pickDay" type="date" :max="today" aria-label="Replay another day" @change="start">
+      <span v-if="cmeNap.visible && cmeNap.tradeScore" class="score" data-testid="catch-up-score">{{ cmeNap.tradeScore }}</span>
       <button type="button" class="exit" @click="exit">Back to live</button>
     </template>
   </div>
@@ -43,6 +44,7 @@
 import { computed, ref } from 'vue';
 
 import stackMoments from '@/data/stackMoments.json';
+import { useCmeNapStore } from '@/stores/cmeNapStore';
 import { useReplayStore } from '@/stores/replayStore';
 import { DEFAULT_CHART_TIME_ZONE } from '@/utils/chart/chartTimeZone';
 import { cmeDayStartMs, REPLAY_START_MS, replayUrl } from '@/utils/replay';
@@ -50,6 +52,7 @@ import { cmeDayStartMs, REPLAY_START_MS, replayUrl } from '@/utils/replay';
 defineOptions({ name: 'ReplayBar' });
 
 const replay = useReplayStore();
+const cmeNap = useCmeNapStore();
 const ny = (opts: Intl.DateTimeFormatOptions) => new Intl.DateTimeFormat('en-CA', { timeZone: 'America/New_York', ...opts });
 const today = ny({ year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date());
 const pickDay = ref<string>(REPLAY_START_MS ? ny({ year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date(REPLAY_START_MS + 6 * 3_600_000)) : '');
@@ -102,6 +105,7 @@ input { color-scheme: dark; }
 input[type=date] { width: 128px; }
 button.go { background: rgba(227, 173, 66, 0.18); border-color: rgba(227, 173, 66, 0.6); }
 button.exit { color: #9fb4ff; }
+.score { font-variant-numeric: tabular-nums; color: #c9a6ff; white-space: nowrap; }
 select.stacks { width: 150px; border-color: rgba(47, 182, 124, 0.55); }
 button:disabled { opacity: 0.45; cursor: default; }
 </style>

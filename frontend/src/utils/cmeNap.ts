@@ -98,3 +98,47 @@ export async function fetchHyperliquidBars(twin: string, interval: string, start
   const rows = (await res.json()) as { t: number; c: string }[];
   return Array.isArray(rows) ? rows.map((r) => ({ t: Number(r.t), c: Number(r.c) })).filter((b) => Number.isFinite(b.c)) : [];
 }
+
+// ---- Catch-up trade: at the reopen, trade from CME's open toward where Hyperliquid is ----
+
+/** Smallest gap between CME's open and the purple dot that makes a trade (points), per market. */
+export const CATCH_UP_MIN: Record<string, number> = { NQ: 10, MNQ: 10 };
+export const CATCH_UP_HOLD_MIN = 60;
+
+export interface CatchUp {
+  dir: 1 | -1;
+  entry: number;
+  target: number;
+  stop: number;
+  dist: number;
+  exitT: number;
+  how: 'target' | 'stop' | 'time';
+  pts: number;
+}
+
+/**
+ * Enter at CME's first price after the closure, aim for the purple dot, stop the same distance the
+ * other way, out after an hour. The stop wins when both are touched in one bar.
+ */
+export function catchUp(nap: NapResult, candles: readonly { timestamp_ms: number; high: number; low: number; close: number }[], minGap: number): CatchUp | null {
+  if (nap.hlAtOpen === null) return null;
+  const gap = nap.hlAtOpen - nap.openPx;
+  const dist = Math.abs(gap);
+  if (dist < minGap) return null;
+  const dir: 1 | -1 = gap > 0 ? 1 : -1;
+  const entry = nap.openPx;
+  const target = nap.hlAtOpen;
+  const stop = entry - dir * dist;
+  const end = nap.openT + CATCH_UP_HOLD_MIN * 60_000;
+  let last: { timestamp_ms: number; close: number } | null = null;
+  for (const c of candles) {
+    if (c.timestamp_ms < nap.openT) continue;
+    if (c.timestamp_ms >= end) break;
+    last = c;
+    const hi = Number(c.high); const lo = Number(c.low);
+    if (dir > 0 ? lo <= stop : hi >= stop) return { dir, entry, target, stop, dist, exitT: c.timestamp_ms, how: 'stop', pts: -dist };
+    if (dir > 0 ? hi >= target : lo <= target) return { dir, entry, target, stop, dist, exitT: c.timestamp_ms, how: 'target', pts: dist };
+  }
+  if (!last) return null;
+  return { dir, entry, target, stop, dist, exitT: last.timestamp_ms, how: 'time', pts: (Number(last.close) - entry) * dir };
+}

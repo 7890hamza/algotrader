@@ -5,7 +5,7 @@ import { watch, type WatchStopHandle } from 'vue';
 import { fetchCandles } from '@/api/candleClient';
 import { useCmeNapStore } from '@/stores/cmeNapStore';
 import type { ChartCandle } from '@/types/contracts';
-import { apiSizes, fetchHyperliquidBars, findNaps, lineUp, NAP_TWIN, type Bar, type Nap, type NapResult } from '@/utils/cmeNap';
+import { apiSizes, CATCH_UP_HOLD_MIN, CATCH_UP_MIN, catchUp, fetchHyperliquidBars, findNaps, lineUp, NAP_TWIN, type Bar, type CatchUp, type Nap, type NapResult } from '@/utils/cmeNap';
 
 import type { ChartManager, ChartDataPoint, ManagedSeriesApi } from './ChartManager';
 
@@ -16,6 +16,8 @@ const PURPLE = '#b07cff';
 class NapPrimitive implements ISeriesPrimitive<Time> {
   private param: SeriesAttachedParameter<Time> | null = null;
   naps: NapResult[] = [];
+  trades = new Map<number, CatchUp | 'none'>(); // by the nap's openT; 'none' = gap under the minimum
+  barMinutes = 1;
   cursor = Number.POSITIVE_INFINITY;
   symbol = '';
   twin = '';
@@ -76,6 +78,45 @@ class NapPrimitive implements ISeriesPrimitive<Time> {
         if (yc !== null) {
           ctx.setLineDash([5, 4]); ctx.strokeStyle = 'rgba(200, 206, 214, 0.5)'; ctx.lineWidth = 1;
           ctx.beginPath(); ctx.moveTo(x0, Math.round(yc) + 0.5); ctx.lineTo(right, Math.round(yc) + 0.5); ctx.stroke(); ctx.setLineDash([]);
+        }
+        // catch-up trade
+        const tr = this.trades.get(n.openT);
+        if (n.openT <= this.cursor && tr === 'none' && n.hlAtOpen !== null) {
+          const yo = y(n.openPx);
+          if (yo !== null) {
+            const t = `No trade · ${Math.abs(n.openPx - n.hlAtOpen).toFixed(2)} pts from the dot`;
+            ctx.font = '11px -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif'; ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
+            const w = ctx.measureText(t).width; ctx.fillStyle = 'rgba(19, 23, 34, 0.85)'; ctx.fillRect(x1 + 10, yo + 10, w + 8, 16);
+            ctx.fillStyle = '#9aa3b2'; ctx.fillText(t, x1 + 14, yo + 18);
+          }
+        }
+        if (n.openT <= this.cursor && tr && tr !== 'none') {
+          const spacing = ts.options().barSpacing;
+          const bx0 = x1 - half;
+          const bx1 = Math.min(mediaSize.width, x1 + (CATCH_UP_HOLD_MIN / this.barMinutes) * spacing - half);
+          const ye = y(tr.entry); const yt = y(tr.target); const ys = y(tr.stop);
+          if (ye !== null && yt !== null && ys !== null && bx1 > bx0) {
+            ctx.fillStyle = 'rgba(47, 191, 143, 0.20)'; ctx.fillRect(bx0, Math.min(ye, yt), bx1 - bx0, Math.abs(yt - ye));
+            ctx.fillStyle = 'rgba(224, 86, 108, 0.24)'; ctx.fillRect(bx0, Math.min(ye, ys), bx1 - bx0, Math.abs(ys - ye));
+            const title = `Catch-up ${tr.dir > 0 ? '▲' : '▼'} to the purple dot · ${tr.dist.toFixed(2)} pts`;
+            ctx.font = '600 12px -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif'; ctx.textAlign = 'left'; ctx.textBaseline = 'bottom';
+            const ty = Math.max(16, Math.min(yt, ys) - 4); const tw = ctx.measureText(title).width;
+            ctx.fillStyle = 'rgba(19, 23, 34, 0.88)'; ctx.fillRect(bx0, ty - 16, tw + 10, 18);
+            ctx.fillStyle = '#ffffff'; ctx.fillText(title, bx0 + 5, ty - 1);
+            // result only once the trade is over
+            if (tr.exitT <= this.cursor) {
+              const xe = x(tr.exitT);
+              const yr = y(tr.how === 'target' ? tr.target : tr.how === 'stop' ? tr.stop : tr.entry + tr.pts * tr.dir);
+              if (xe !== null && yr !== null) {
+                const tag = `${tr.how === 'target' ? '✓' : tr.how === 'stop' ? '✗' : '⏱'} ${tr.pts >= 0 ? '+' : '−'}${Math.abs(tr.pts).toFixed(2)} pts${tr.how === 'time' ? ' at 60 min' : ''}`;
+                ctx.font = '700 12.5px -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif'; ctx.textBaseline = 'middle';
+                const w = ctx.measureText(tag).width;
+                ctx.fillStyle = tr.pts >= 0 ? 'rgba(47, 182, 124, 0.95)' : 'rgba(224, 87, 74, 0.95)';
+                ctx.fillRect(xe + 8, yr - 11, w + 12, 22);
+                ctx.fillStyle = '#0f121a'; ctx.fillText(tag, xe + 14, yr + 0.5);
+              }
+            }
+          }
         }
         // wake-up dots
         if (n.openT <= this.cursor && n.hlAtOpen !== null) {
@@ -181,6 +222,19 @@ export class CmeNapLink {
     const cursor = this.host.cursorMs();
     const ready = naps.map((n) => this.cache.get(this.napKey(twin, n, minutes))).filter((r): r is NapResult => typeof r === 'object');
     this.prim.naps = ready;
+    this.prim.barMinutes = minutes;
+    // catch-up trades (NQ / MNQ): worked out on all loaded candles, shown up to the cursor
+    const minGap = CATCH_UP_MIN[(this.host.symbol() ?? '').toUpperCase()];
+    const candles = this.host.candles();
+    this.prim.trades.clear();
+    let done = 0; let won = 0; let total = 0;
+    for (const n of ready) {
+      if (minGap === undefined) continue;
+      const tr = catchUp(n, candles, minGap);
+      this.prim.trades.set(n.openT, tr ?? 'none');
+      if (tr && tr.exitT <= cursor) { done += 1; total += tr.pts; if (tr.pts > 0) won += 1; }
+    }
+    useCmeNapStore().tradeScore = minGap === undefined || !done ? '' : `Catch-up trades: ${won} of ${done} won · ${total >= 0 ? '+' : '−'}${Math.abs(total).toFixed(2)} pts`;
     this.prim.cursor = cursor;
     const pts: ChartDataPoint[] = [];
     for (const n of ready) {

@@ -10,9 +10,11 @@ export const useCmeNapStore = defineStore('cmeNap', () => {
   const visible = ref<boolean>(getStoredState<boolean>(VISIBLE_KEY) ?? false);
   /** what the overlay is showing, for the top bar's tooltip */
   const status = ref('');
+  /** Replay / live: finished catch-up trades in the loaded candles, e.g. 'Catch-up trades: 3 of 4 won · +61 pts' */
+  const tradeScore = ref('');
   function toggle(): void {
     visible.value = !visible.value;
     setStoredState(VISIBLE_KEY, visible.value);
   }
-  return { visible, status, toggle };
+  return { visible, status, tradeScore, toggle };
 });
