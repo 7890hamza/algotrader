@@ -227,3 +227,24 @@ export function statRuns(
   }
   return out;
 }
+
+// ---- Heads-up: open stats stacked just ahead of price, before a run starts ----
+
+export interface AheadStack { count: number; far: number; prices: number[] }
+
+/**
+ * Day-level Game Plan targets still open at time `t` within `reach` points above and below
+ * `price`. A side is returned only when at least `minCount` different prices sit there.
+ */
+export function statsAhead(
+  levels: readonly { group: string; price: number; kind: string; hitAt: number | null; never: boolean; frm: number; until: number }[],
+  t: number, price: number, reach: number, minCount: number,
+): { up: AheadStack | null; down: AheadStack | null } {
+  const open = levels.filter((l) => l.kind === 'target' && !HOURLY_GROUPS.has(l.group) && !l.never
+    && l.frm <= t && t < l.until && (l.hitAt === null || l.hitAt > t));
+  const side = (pick: (p: number) => boolean): AheadStack | null => {
+    const prices = [...new Set(open.map((l) => Math.round(l.price * 100) / 100).filter(pick))].sort((a, b) => Math.abs(a - price) - Math.abs(b - price));
+    return prices.length >= minCount ? { count: prices.length, far: prices[prices.length - 1], prices } : null;
+  };
+  return { up: side((p) => p > price && p - price <= reach), down: side((p) => p < price && price - p <= reach) };
+}

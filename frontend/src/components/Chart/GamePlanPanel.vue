@@ -72,6 +72,16 @@
 
       <game-plan-mini-chart v-if="live" :plan="plan" :board="board" :t="live.t" :price="live.price" />
 
+      <p class="gp-ahead" data-testid="game-plan-ahead">
+        <span class="gp-label">Heads-up</span>
+        Show when
+        <input id="gp-ahead-count" type="number" min="2" max="20" step="1" :value="store.ahead.minCount" aria-label="Stats needed"
+          @change="store.setAhead({ minCount: Number(($event.target as HTMLInputElement).value) })">
+        stats are within
+        <input id="gp-ahead-reach" type="number" min="1" step="1" :value="aheadFamily === 'NQ' ? store.ahead.reachNQ : store.ahead.reachES" aria-label="Points from price"
+          @change="store.setAhead(aheadFamily === 'NQ' ? { reachNQ: Number(($event.target as HTMLInputElement).value) } : { reachES: Number(($event.target as HTMLInputElement).value) })">
+        pts ({{ aheadFamily }})
+      </p>
       <p class="gp-foot">{{ plan.source || "ES 2016-2025" }} stats. Odds, never trade calls. ↻ = a session missed it and it carried over.</p>
     </template>
   </aside>
@@ -102,6 +112,8 @@ const tick = ref(0);
 let timer: ReturnType<typeof setInterval> | null = null;
 onMounted(() => { timer = setInterval(() => { tick.value++; }, 2000); });
 onBeforeUnmount(() => { if (timer) clearInterval(timer); });
+
+const aheadFamily = computed(() => ((plan.value?.market?.family ?? plan.value?.symbol ?? '').toUpperCase().includes('NQ') ? 'NQ' : 'ES'));
 
 const live = computed(() => {
   void tick.value;
@@ -233,4 +245,6 @@ const GamePlanRow = defineComponent({
 .gp-done-row { display: grid; grid-template-columns: 12px minmax(0, 1fr) auto; gap: 6px; padding: 2px 0; }
 .gp-done-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .gp-foot { color: #5d6474; font-size: 10.5px; margin: 0; line-height: 1.4; }
+.gp-ahead { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 6px; font-size: 12px; color: #9aa3b2; margin: 6px 0 0; }
+.gp-ahead input { width: 46px; font: inherit; color: #e8ebf0; background: #1a2030; border: 1px solid #2c3446; border-radius: 5px; padding: 1px 4px; color-scheme: dark; }
 </style>

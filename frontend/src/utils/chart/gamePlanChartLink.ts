@@ -23,7 +23,7 @@ export class GamePlanChartLink {
     },
   ) {
     const store = useGamePlanStore();
-    this.stop = watch(() => [store.plan, store.visible] as const, () => this.render(), { immediate: true });
+    this.stop = watch(() => [store.plan, store.visible, store.ahead] as const, () => this.render(), { immediate: true });
     this.timer = setInterval(() => this.render(), 2000);
   }
 
@@ -37,6 +37,15 @@ export class GamePlanChartLink {
     }
     this.attachedTo = series;
     series?.attachPrimitive?.(this.primitive);
+    this.render();
+  }
+
+  /** Attach again so the heads-up draws above primitives attached later (Replay's curtain). */
+  reattach(): void {
+    const series = this.attachedTo;
+    if (!series) return;
+    try { series.detachPrimitive(this.primitive); } catch { /* not attached */ }
+    series.attachPrimitive?.(this.primitive);
     this.render();
   }
 
@@ -54,6 +63,7 @@ export class GamePlanChartLink {
       t = bar.t;
       price = bar.close;
     }
+    this.primitive.ahead = store.ahead;
     this.primitive.set(plan, t, price);
   }
 

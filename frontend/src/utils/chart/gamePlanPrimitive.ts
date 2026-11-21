@@ -10,7 +10,7 @@ import type {
   Time,
 } from 'lightweight-charts';
 
-import { statRuns, type StatRun } from '../setups';
+import { statRuns, statsAhead, type StatRun } from '../setups';
 
 import { buildBoard, isCarried, levelOdds, levelStatus, type DayPlan, type PlanLevel } from './gamePlan';
 
@@ -43,12 +43,39 @@ export function chartLevels(plan: DayPlan, t: number, price: number): PlanLevel[
 
 interface RunBox { x0: number; x1: number; y0: number; y1: number; up: boolean; text: string }
 
+/** Heads-up bracket: a column just right of the last candle, from price to the farthest open stat in reach. */
+interface AheadBox { x: number; yPrice: number; yFar: number; ys: number[]; up: boolean; text: string }
+
 class GamePlanRenderer implements IPrimitivePaneRenderer {
-  constructor(private readonly lines: readonly Line[], private readonly runs: readonly RunBox[] = []) {}
+  constructor(private readonly lines: readonly Line[], private readonly runs: readonly RunBox[] = [], private readonly ahead: readonly AheadBox[] = []) {}
 
   draw(target: CanvasRenderingTarget2D): void {
     target.useMediaCoordinateSpace(({ context: ctx, mediaSize }) => {
       ctx.save();
+      // Heads-up: stats stacked just ahead of price, before any of them is hit.
+      for (const a of this.ahead) {
+        const w = 34;
+        const top = Math.min(a.yPrice, a.yFar); const h = Math.abs(a.yFar - a.yPrice);
+        ctx.fillStyle = a.up ? 'rgba(47, 182, 124, 0.10)' : 'rgba(224, 87, 74, 0.10)';
+        ctx.fillRect(a.x, top, w, h);
+        ctx.strokeStyle = a.up ? 'rgba(47, 182, 124, 0.75)' : 'rgba(224, 87, 74, 0.75)';
+        ctx.lineWidth = 1;
+        ctx.setLineDash([3, 3]);
+        ctx.strokeRect(crisp(a.x), crisp(top), w, Math.round(h));
+        ctx.setLineDash([]);
+        for (const y of a.ys) { ctx.beginPath(); ctx.moveTo(a.x + 4, crisp(y)); ctx.lineTo(a.x + w - 4, crisp(y)); ctx.stroke(); }
+        ctx.font = '600 11px -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif';
+        ctx.textAlign = 'left';
+        // label right by the current price (the far end can be off screen): below it for stats above, above it for stats below
+        ctx.textBaseline = 'middle';
+        const tw = ctx.measureText(a.text).width;
+        const lx = Math.max(4, Math.min(a.x, mediaSize.width - tw - 12));
+        const ly = a.up ? a.yPrice + 12 : a.yPrice - 12;
+        ctx.fillStyle = 'rgba(19, 23, 34, 0.9)';
+        ctx.fillRect(lx - 3, ly - 8, tw + 8, 16);
+        ctx.fillStyle = a.up ? '#5fd3a0' : '#ff8a7a';
+        ctx.fillText(a.text, lx + 1, ly + 0.5);
+      }
       // Stat runs: a soft box around the checkmarks that came one after another.
       for (const r of this.runs) {
         const x = Math.min(r.x0, r.x1) - 6; const w = Math.abs(r.x1 - r.x0) + 12;
@@ -111,6 +138,12 @@ class GamePlanRenderer implements IPrimitivePaneRenderer {
   }
 }
 
+class GamePlanAheadView implements IPrimitivePaneView {
+  constructor(private readonly primitive: GamePlanPrimitive) {}
+  zOrder(): PrimitivePaneViewZOrder { return 'top'; }
+  renderer(): IPrimitivePaneRenderer | null { return this.primitive.createAheadRenderer(); }
+}
+
 class GamePlanPaneView implements IPrimitivePaneView {
   constructor(private readonly primitive: GamePlanPrimitive) {}
 
@@ -127,9 +160,11 @@ class GamePlanPaneView implements IPrimitivePaneView {
 export class GamePlanPrimitive implements ISeriesPrimitive<Time> {
   private params: SeriesAttachedParameter<Time, SeriesType> | null = null;
   private plan: DayPlan | null = null;
+  /** heads-up settings (from the Game Plan store) */
+  ahead = { minCount: 4, reachES: 12, reachNQ: 50 };
   private t = 0;
   private price = 0;
-  private readonly views: readonly IPrimitivePaneView[] = [new GamePlanPaneView(this)];
+  private readonly views: readonly IPrimitivePaneView[] = [new GamePlanPaneView(this), new GamePlanAheadView(this)];
 
   set(plan: DayPlan | null, t: number, price = 0): void {
     this.plan = plan;
@@ -160,6 +195,31 @@ export class GamePlanPrimitive implements ISeriesPrimitive<Time> {
     if (idx === null) return null;
     const c = ts.logicalToCoordinate(idx as unknown as Logical);
     return c === null ? null : Number(c);
+  }
+
+  /** Heads-up brackets, drawn on top (Replay's curtain covers the space right of the last candle). */
+  createAheadRenderer(): IPrimitivePaneRenderer | null {
+    const plan = this.plan;
+    const series = this.params?.series;
+    if (!plan || !series) return null;
+    const aheads: AheadBox[] = [];
+    const nowX = this.x(this.t);
+    const yNow = series.priceToCoordinate(this.price);
+    if (nowX !== null && yNow !== null && this.price) {
+      const family = (plan.market?.family ?? plan.symbol ?? '').toUpperCase().includes('NQ') ? 'NQ' : 'ES';
+      const reach = family === 'NQ' ? this.ahead.reachNQ : this.ahead.reachES;
+      const found = statsAhead(plan.levels, this.t, this.price, reach, this.ahead.minCount);
+      const pts = (v: number) => (Math.round(v * 4) / 4).toString();
+      for (const [st, up] of [[found.up, true], [found.down, false]] as const) {
+        if (!st) continue;
+        const yFar = series.priceToCoordinate(st.far);
+        if (yFar === null) continue;
+        const ys = st.prices.map((p) => series.priceToCoordinate(p)).filter((v): v is NonNullable<typeof v> => v !== null).map(Number);
+        aheads.push({ x: nowX + 14, yPrice: Number(yNow), yFar: Number(yFar), ys, up,
+          text: `${up ? '▲' : '▼'} ${st.count} stats within ${pts(Math.abs(st.far - this.price))} pts` });
+      }
+    }
+    return aheads.length ? new GamePlanRenderer([], [], aheads) : null;
   }
 
   createRenderer(): IPrimitivePaneRenderer | null {

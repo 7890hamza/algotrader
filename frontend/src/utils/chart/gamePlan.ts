@@ -33,6 +33,8 @@ export interface DayPlan {
   symbol: string;
   /** Where the odds come from, e.g. "NQ 2016-2025 (used for MNQ)". */
   source?: string;
+  /** the instrument the plan is for and which stat tables it uses (ES or NQ) */
+  market?: { symbol: string; family: string; tick: number };
   key: string;
   label: string;
   start: number;

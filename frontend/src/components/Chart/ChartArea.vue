@@ -961,6 +961,7 @@ export default defineComponent({
       if (series && !this.replayCurtain) {
         this.replayCurtain = markRaw(new ReplayCurtainPrimitive("#131722"));
         series.attachPrimitive(this.replayCurtain);
+        this.gamePlanLink?.reattach();
       }
       this.replayExtras();
       if (scrollToCursor || replay.playing) this.scrollToRealTime();
