@@ -33,3 +33,13 @@ export function cmeDayStartMs(day: string): number {
   const offsetMs = (nyHour - 12) * 3_600_000;
   return Date.parse(`${day}T00:00:00Z`) - offsetMs - 6 * 3_600_000;
 }
+
+/** Replay: the last loaded candle at or before the cursor (the chart holds the whole week). */
+export function barAtOrBefore<T extends { timestamp_ms: number }>(bars: readonly T[], ms: number): T | null {
+  let lo = 0; let hi = bars.length - 1; let found: T | null = null;
+  while (lo <= hi) {
+    const mid = (lo + hi) >> 1;
+    if (bars[mid].timestamp_ms <= ms) { found = bars[mid]; lo = mid + 1; } else hi = mid - 1;
+  }
+  return found;
+}

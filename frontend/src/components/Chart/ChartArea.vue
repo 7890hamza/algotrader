@@ -148,7 +148,7 @@ import SeizDashboard from "@/components/Chart/SeizDashboard.vue";
 import SetupsPanel from "@/components/Chart/SetupsPanel.vue";
 import ReplayBar from "@/components/Chart/ReplayBar.vue";
 import { useReplayStore } from "@/stores/replayStore";
-import { IS_REPLAY, REPLAY_FETCH_LIMIT, replayEndMs } from "@/utils/replay";
+import { barAtOrBefore, IS_REPLAY, REPLAY_FETCH_LIMIT, replayEndMs } from "@/utils/replay";
 import { ReplayCurtainPrimitive } from "@/utils/chart/replayCurtainPrimitive";
 import AmTbrGuideOverlay from "@/components/Chart/AmTbrGuideOverlay.vue";
 import { CloseCircleOutline } from "@/icons";
@@ -459,7 +459,7 @@ export default defineComponent({
         getSymbol: () => this.currentMarketStore.symbol,
         lastBar: () => {
           const bars = this.candlesticksStore.data;
-          const bar = bars.length ? bars[bars.length - 1] : null;
+          const bar = IS_REPLAY ? barAtOrBefore(bars, useReplayStore().cursorMs) : bars.length ? bars[bars.length - 1] : null;
           return bar ? { t: bar.timestamp_ms, close: Number(bar.close) } : null;
         },
       }));

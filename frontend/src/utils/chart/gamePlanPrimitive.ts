@@ -10,6 +10,8 @@ import type {
   Time,
 } from 'lightweight-charts';
 
+import { statRuns, type StatRun } from '../setups';
+
 import { buildBoard, isCarried, levelOdds, levelStatus, type DayPlan, type PlanLevel } from './gamePlan';
 
 const FONT = '500 11px -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif';
@@ -39,12 +41,33 @@ export function chartLevels(plan: DayPlan, t: number, price: number): PlanLevel[
   return [...board.above, ...board.below, ...board.done.slice(0, 8)].map((r) => r.level);
 }
 
+interface RunBox { x0: number; x1: number; y0: number; y1: number; up: boolean; text: string }
+
 class GamePlanRenderer implements IPrimitivePaneRenderer {
-  constructor(private readonly lines: readonly Line[]) {}
+  constructor(private readonly lines: readonly Line[], private readonly runs: readonly RunBox[] = []) {}
 
   draw(target: CanvasRenderingTarget2D): void {
     target.useMediaCoordinateSpace(({ context: ctx, mediaSize }) => {
       ctx.save();
+      // Stat runs: a soft box around the checkmarks that came one after another.
+      for (const r of this.runs) {
+        const x = Math.min(r.x0, r.x1) - 6; const w = Math.abs(r.x1 - r.x0) + 12;
+        const y = Math.min(r.y0, r.y1) - 6; const h = Math.abs(r.y1 - r.y0) + 12;
+        ctx.fillStyle = r.up ? 'rgba(47, 182, 124, 0.13)' : 'rgba(224, 87, 74, 0.13)';
+        ctx.strokeStyle = r.up ? 'rgba(47, 182, 124, 0.7)' : 'rgba(224, 87, 74, 0.7)';
+        ctx.lineWidth = 1;
+        ctx.fillRect(x, y, w, h);
+        ctx.strokeRect(crisp(x), crisp(y), Math.round(w), Math.round(h));
+        ctx.font = '600 11px -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif';
+        ctx.textAlign = 'left';
+        ctx.textBaseline = 'bottom';
+        const tw = ctx.measureText(r.text).width;
+        const ty = Math.max(16, y - 3); // label above the box, where the run started
+        ctx.fillStyle = 'rgba(19, 23, 34, 0.85)';
+        ctx.fillRect(x, ty - 14, tw + 8, 14);
+        ctx.fillStyle = r.up ? '#5fd3a0' : '#ff8a7a';
+        ctx.fillText(r.text, x + 4, ty - 1);
+      }
       for (const l of this.lines) {
         ctx.globalAlpha = l.faded ? 0.45 : l.dashed ? 0.75 : 1;
         ctx.strokeStyle = l.color;
@@ -170,6 +193,22 @@ export class GamePlanPrimitive implements ISeriesPrimitive<Time> {
         label,
       });
     }
-    return lines.length ? new GamePlanRenderer(lines) : null;
+    const runs: RunBox[] = [];
+    for (const r of statRuns(plan.levels, this.t, 4) as StatRun[]) {
+      const x0 = this.x(r.from); const x1 = this.x(r.to);
+      const y0 = series.priceToCoordinate(r.lo); const y1 = series.priceToCoordinate(r.hi);
+      if (x0 === null || x1 === null || y0 === null || y1 === null) continue;
+      runs.push({ x0, x1, y0: Number(y0), y1: Number(y1), up: r.dir > 0, text: `${r.count} stats in a row ${r.dir > 0 ? '▲' : '▼'}` });
+    }
+    // Every checkmark inside a run, not only the latest few, so the stack reads as one.
+    for (const r of statRuns(plan.levels, this.t, 4)) {
+      for (const l of plan.levels) {
+        if (l.hitAt === null || l.hitAt < r.from || l.hitAt > r.to || l.kind !== 'target' || lines.some((x) => x.hitX !== null && x.y === series.priceToCoordinate(l.price))) continue;
+        const y = series.priceToCoordinate(l.price); const hx = this.x(l.hitAt);
+        if (y === null || hx === null || (r.dir > 0) !== (l.side === 'up') || l.group === 'Hour' || l.group === 'Hour zones') continue;
+        lines.push({ y: Number(y), x0: Math.max(0, hx - STUB_PX), x1: hx, color: l.color, dashed: false, faded: true, hitX: hx, label: null });
+      }
+    }
+    return lines.length || runs.length ? new GamePlanRenderer(lines, runs) : null;
   }
 }

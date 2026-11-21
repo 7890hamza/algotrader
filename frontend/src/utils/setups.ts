@@ -189,3 +189,41 @@ export function setupBoxes(trades: readonly SetupTrade[], target = 10, stop = 3)
   }
   return out;
 }
+
+// ---- Stat runs: Game Plan targets checked off one after another, all in one direction ----
+
+/** Groups that come every hour; a run counts the day-level stats. */
+const HOURLY_GROUPS = new Set(['Hour zones', 'Hour']);
+
+export interface StatRun { from: number; to: number; lo: number; hi: number; count: number; dir: 1 | -1; labels: string[] }
+
+/**
+ * Runs of hits up to time `t`: day-level targets hit on the same side (up = price rising into
+ * them), each within `gapMs` of the last, with at least `minCount` different prices.
+ * Tested on ES 2026: at the moment the 6th stat was hit, price went 10 more first 41% of the
+ * time and came back 10 first 44%, so a run marks a strong push, not the next direction.
+ */
+export function statRuns(
+  levels: readonly { group: string; label: string; price: number; kind: string; hitAt: number | null; never: boolean; side?: 'up' | 'dn' }[],
+  t: number, minCount = 4, gapMs = 10 * 60_000,
+): StatRun[] {
+  const seen = new Set<string>();
+  const hits = levels
+    .filter((l) => l.kind === 'target' && !HOURLY_GROUPS.has(l.group) && !l.never && l.hitAt !== null && l.hitAt <= t && l.side)
+    .filter((l) => { const k = `${l.hitAt}|${l.price}|${l.side}`; if (seen.has(k)) return false; seen.add(k); return true; })
+    .sort((a, b) => (a.hitAt as number) - (b.hitAt as number));
+  const out: StatRun[] = [];
+  let i = 0;
+  while (i < hits.length) {
+    const g = [hits[i]];
+    let j = i + 1;
+    while (j < hits.length && hits[j].side === g[0].side && (hits[j].hitAt as number) - (g[g.length - 1].hitAt as number) <= gapMs) g.push(hits[j++]);
+    const prices = [...new Set(g.map((x) => Math.round(x.price * 100) / 100))];
+    if (prices.length >= minCount) {
+      out.push({ from: g[0].hitAt as number, to: g[g.length - 1].hitAt as number, lo: Math.min(...prices), hi: Math.max(...prices),
+        count: prices.length, dir: g[0].side === 'up' ? 1 : -1, labels: g.map((x) => x.label) });
+    }
+    i = j;
+  }
+  return out;
+}

@@ -83,13 +83,16 @@ import { computed, defineComponent, h, onBeforeUnmount, onMounted, ref, type Pro
 import GamePlanMiniChart from '@/components/Chart/GamePlanMiniChart.vue';
 import { useCandlesticksStore } from '@/stores/candlesticksStore';
 import { useGamePlanStore } from '@/stores/gamePlanStore';
+import { useReplayStore } from '@/stores/replayStore';
 import { buildBoard, type BoardRow } from '@/utils/chart/gamePlan';
+import { barAtOrBefore, IS_REPLAY } from '@/utils/replay';
 
 defineOptions({ name: 'GamePlanPanel' });
 
 const store = useGamePlanStore();
 const candles = useCandlesticksStore();
 const plan = computed(() => store.plan);
+const replay = IS_REPLAY ? useReplayStore() : null;
 const openId = ref<string | null>(null);
 const showDone = ref(false);
 const showAll = ref(false);
@@ -102,10 +105,11 @@ onBeforeUnmount(() => { if (timer) clearInterval(timer); });
 
 const live = computed(() => {
   void tick.value;
+  void replay?.cursorMs;
   const p = plan.value;
   if (!p) return null;
   const bars = candles.data;
-  const lastBar = bars.length ? bars[bars.length - 1] : null;
+  const lastBar = IS_REPLAY ? barAtOrBefore(bars, replay!.cursorMs) : bars.length ? bars[bars.length - 1] : null;
   let t = p.last?.t ?? p.start;
   let price = p.last?.close ?? NaN;
   if (lastBar && lastBar.timestamp_ms >= t && lastBar.timestamp_ms < p.end) {
