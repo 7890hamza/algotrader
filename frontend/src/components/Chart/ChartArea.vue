@@ -148,6 +148,7 @@ import SeizDashboard from "@/components/Chart/SeizDashboard.vue";
 import SetupsPanel from "@/components/Chart/SetupsPanel.vue";
 import ReplayBar from "@/components/Chart/ReplayBar.vue";
 import { useReplayStore } from "@/stores/replayStore";
+import { CmeNapLink } from "@/utils/chart/cmeNapLink";
 import { barAtOrBefore, IS_REPLAY, REPLAY_FETCH_LIMIT, replayEndMs } from "@/utils/replay";
 import { ReplayCurtainPrimitive } from "@/utils/chart/replayCurtainPrimitive";
 import AmTbrGuideOverlay from "@/components/Chart/AmTbrGuideOverlay.vue";
@@ -229,6 +230,7 @@ interface ChartAreaData {
   ptSpec: ContractSpec | null;
   retraceTool: RetraceToolController | null;
   gamePlanLink: GamePlanChartLink | null;
+  cmeNapLink: CmeNapLink | null;
   rtSelected: RetraceDrawing | null;
 }
 
@@ -308,6 +310,7 @@ export default defineComponent({
       ptSpec: null,
       retraceTool: null,
       gamePlanLink: null,
+      cmeNapLink: null,
       rtSelected: null,
     };
   },
@@ -454,6 +457,14 @@ export default defineComponent({
     }));
     this.retraceTool.setSymbol(this.currentMarketStore.symbol);
     if (!IS_SECOND_PANE) {
+      this.cmeNapLink = markRaw(new CmeNapLink({
+        manager: () => this.chartInfrastructure.chartManager,
+        candles: () => this.candlesticksStore.data,
+        symbol: () => this.currentMarketStore.symbol,
+        barMinutes: () => TIMEFRAME_TO_MINUTES[this.currentChartSessionKey().timeframe as TimeframeCode] ?? 1,
+        cursorMs: () => (IS_REPLAY ? useReplayStore().cursorMs : Number.POSITIVE_INFINITY),
+        onChange: () => { if (IS_REPLAY) this.replayExtras(); },
+      }));
       this.gamePlanLink = markRaw(new GamePlanChartLink({
         getSeries: () => this.ohlcSeriesRef,
         getSymbol: () => this.currentMarketStore.symbol,
@@ -503,6 +514,7 @@ export default defineComponent({
     this.positionTool?.destroy();
     this.retraceTool?.destroy();
     this.gamePlanLink?.destroy();
+    this.cmeNapLink?.destroy();
     const chartContainer = this.getChartContainer();
     if (chartContainer) {
       chartContainer.removeEventListener("wheel", this.onWheelPassive);
@@ -927,6 +939,7 @@ export default defineComponent({
       }
 
       this.ohlcSeriesRef = this.addCandlestickData(data, this.seriesOptions);
+      this.cmeNapLink?.refresh(false);
       void this.syncBacktestOverlayTarget();
       this.refreshBacktestMarkers();
 
@@ -942,7 +955,6 @@ export default defineComponent({
     renderReplay(scrollToCursor: boolean): void {
       const replay = useReplayStore();
       const all = this.candlesticksStore.data;
-      replay.barTimes = all.map((c) => c.timestamp_ms);
       const shown = all.filter((c) => c.timestamp_ms <= replay.cursorMs);
       this.renderCandlesticks(shown.length ? shown : all.slice(0, 1));
       const series = this.ohlcSeriesRef;
@@ -950,9 +962,19 @@ export default defineComponent({
         this.replayCurtain = markRaw(new ReplayCurtainPrimitive("#131722"));
         series.attachPrimitive(this.replayCurtain);
       }
-      const last = shown[shown.length - 1];
-      this.replayCurtain?.setLastTime(last ? Math.floor(last.timestamp_ms / 1000) : null);
+      this.replayExtras();
       if (scrollToCursor || replay.playing) this.scrollToRealTime();
+    },
+
+    /** Replay: step through the candles and the CME-closed overlay's points, and hide what's after the cursor. */
+    replayExtras(): void {
+      const replay = useReplayStore();
+      const napTimes = this.cmeNapLink?.times() ?? [];
+      const candleTimes = this.candlesticksStore.data.map((c) => c.timestamp_ms);
+      replay.barTimes = napTimes.length ? [...new Set([...candleTimes, ...napTimes])].sort((a, b) => a - b) : candleTimes;
+      let last = -Infinity;
+      for (const t of replay.barTimes) { if (t <= replay.cursorMs) last = t; else break; }
+      this.replayCurtain?.setLastTime(Number.isFinite(last) ? Math.floor(last / 1000) : null);
     },
 
     updateCurrentCandle(candle: CandleUpdateMessage): void {

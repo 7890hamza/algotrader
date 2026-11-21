@@ -23,6 +23,16 @@
 
     <n-button
       round
+      class="game-plan-button cme-nap-button"
+      :class="{ 'cme-nap-button--active': cmeNapStore.visible }"
+      data-testid="topbar-cme-closed"
+      :title="cmeNapStore.visible && cmeNapStore.status ? cmeNapStore.status : 'CME closed: Hyperliquid\'s price while ES / NQ are shut (2-3 PM PT and weekends)'"
+      :aria-pressed="cmeNapStore.visible"
+      @click="cmeNapStore.toggle()"
+    >CME closed</n-button>
+
+    <n-button
+      round
       class="game-plan-button"
       :class="{ 'game-plan-button--active': domStore.visible }"
       data-testid="topbar-memory-dom"
@@ -172,6 +182,7 @@ import TopBarModals from '@/components/TopBar/Modals/TopBarModals.vue';
 import { HandRightOutline, ResizeOutline } from '@/icons';
 import { useCurrentMarketStore } from '@/stores/currentMarketStore';
 import { useDomStore } from '@/stores/domStore';
+import { useCmeNapStore } from '@/stores/cmeNapStore';
 import { useGamePlanStore } from '@/stores/gamePlanStore';
 import { useModalStore } from '@/stores/modalStore';
 import type { ChartLayout } from '@/utils/chartPane';
@@ -211,6 +222,7 @@ function openModal(name: string): void {
 const currentMarketStore = useCurrentMarketStore();
 const modalStore = useModalStore();
 const gamePlanStore = useGamePlanStore();
+const cmeNapStore = useCmeNapStore();
 const domStore = useDomStore();
 const currentSymbol = computed(() => currentMarketStore.symbol);
 const selectedChartInteractionModeColor = '#7fe7c4';
@@ -254,6 +266,7 @@ function toggleMode(mode: ChartInteractionMode): void {
 .position-button--active.position-button--short { background: rgba(224, 87, 74, 0.2); }
 .position-button--retrace { color: #e9c46a; }
 .game-plan-button--active { color: #e9c46a; background: rgba(233, 196, 106, 0.15); }
+.cme-nap-button--active { color: #c9a6ff; background: rgba(176, 124, 255, 0.16); }
 .position-button--active.position-button--retrace { background: rgba(233, 196, 106, 0.2); }
 
 .active-chart-note {
