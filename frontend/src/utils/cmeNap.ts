@@ -31,14 +31,26 @@ export interface NapResult extends Nap {
   barMinutes: number;
 }
 
-/** Stretches with no CME candles longer than 45 minutes (and longer than 3 chart bars). */
+/**
+ * Stretches with no CME candles longer than 45 minutes (and longer than 3 chart bars). A stray
+ * candle or two inside a closure (a settlement print on a Saturday, say) doesn't split it in two.
+ */
 export function findNaps(candles: readonly { timestamp_ms: number; open: number; close: number }[], barMs: number): Nap[] {
-  const out: Nap[] = [];
   const minGap = Math.max(45 * 60_000, 3 * barMs);
-  for (let i = 1; i < candles.length; i++) {
-    const a = candles[i - 1];
-    const b = candles[i];
-    if (b.timestamp_ms - a.timestamp_ms <= minGap) continue;
+  const hole = Math.max(15 * 60_000, 3 * barMs); // a gap this long splits candles into separate runs
+  // runs of candles without a hole; tiny runs between holes are stray prints inside a closure
+  const runs: (typeof candles[number])[][] = [];
+  for (const c of candles) {
+    const run = runs[runs.length - 1];
+    if (run && c.timestamp_ms - run[run.length - 1].timestamp_ms <= hole) run.push(c);
+    else runs.push([c]);
+  }
+  const kept = runs.filter((r, i) => r.length >= 3 || i === 0 || i === runs.length - 1);
+  const out: Nap[] = [];
+  for (let i = 1; i < kept.length; i++) {
+    const a = kept[i - 1][kept[i - 1].length - 1];
+    const b = kept[i][0];
+    if (b.timestamp_ms - a.timestamp_ms <= minGap) continue; // a short pause, not a closure
     out.push({ closeT: a.timestamp_ms, openT: b.timestamp_ms, closePx: Number(a.close), openPx: Number(b.open),
       weekend: b.timestamp_ms - a.timestamp_ms > 12 * 3_600_000 });
   }

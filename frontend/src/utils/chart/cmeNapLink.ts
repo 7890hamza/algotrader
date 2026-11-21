@@ -39,6 +39,7 @@ class NapPrimitive implements ISeriesPrimitive<Time> {
     const y = (px: number) => p.series.priceToCoordinate(px);
     target.useMediaCoordinateSpace(({ context: ctx, mediaSize }) => {
       const half = Math.max(1, ts.options().barSpacing / 2);
+      let labelRight = -Infinity;
       for (const n of this.naps) {
         if (n.closeT > this.cursor) continue;
         const x0 = x(n.closeT);
@@ -51,6 +52,15 @@ class NapPrimitive implements ISeriesPrimitive<Time> {
         const left = x0 + half;
         const right = Math.min(n.openT <= this.cursor ? x1 - half : x1 + half, mediaSize.width);
         if (right <= left) continue;
+        // the purple line: this closure only, from CME's close to the reopen (or the cursor)
+        const pathPts: [number, number][] = [];
+        for (const [t, v] of shownPts) { const px = x(t); const py = y(v); if (px !== null && py !== null) pathPts.push([Number(px), Number(py)]); }
+        if (pathPts.length > 1) {
+          ctx.strokeStyle = PURPLE; ctx.lineWidth = 2; ctx.lineJoin = 'round';
+          ctx.beginPath(); ctx.moveTo(pathPts[0][0], pathPts[0][1]);
+          for (const [px, py] of pathPts.slice(1)) ctx.lineTo(px, py);
+          ctx.stroke();
+        }
         ctx.fillStyle = 'rgba(139, 147, 163, 0.12)';
         ctx.fillRect(left, 0, right - left, mediaSize.height);
         const sharp = n.barMinutes === 1 ? '1-min' : n.barMinutes < 60 ? `${n.barMinutes}-min, blurrier` : `${n.barMinutes / 60}-hour, rough`;
@@ -70,9 +80,14 @@ class NapPrimitive implements ISeriesPrimitive<Time> {
         ctx.textBaseline = 'top';
         const w = Math.max(...lines.map((s) => ctx.measureText(s).width)) + 12;
         const bx = Math.max(4, Math.min(left + 6, mediaSize.width - w - 70));
-        ctx.fillStyle = 'rgba(19, 23, 34, 0.88)';
-        ctx.fillRect(bx, 40, w, lines.length * 16 + 8);
-        lines.forEach((s, i) => { ctx.fillStyle = i === 0 ? '#c9ced6' : i === 1 ? PURPLE : '#ffffff'; ctx.fillText(s, bx + 6, 44 + i * 16); });
+        // a closure mostly off screen keeps its zone but not its score box (it would sit on the next one)
+        const drawBox = right - 40 > 0 && bx >= labelRight;
+        if (drawBox) labelRight = bx + w + 8;
+        if (drawBox) {
+          ctx.fillStyle = 'rgba(19, 23, 34, 0.88)';
+          ctx.fillRect(bx, 40, w, lines.length * 16 + 8);
+          lines.forEach((s, i) => { ctx.fillStyle = i === 0 ? '#c9ced6' : i === 1 ? PURPLE : '#ffffff'; ctx.fillText(s, bx + 6, 44 + i * 16); });
+        }
         // dashed "fell asleep" line
         const yc = y(n.closePx);
         if (yc !== null) {
@@ -240,15 +255,13 @@ export class CmeNapLink {
     for (const n of ready) {
       const shown = n.line.filter(([t]) => t <= cursor);
       if (shown.length < 2) continue;
-      // break the line between closures on the CME bar before each one (a time the chart already has)
-      if (pts.length) pts.push({ time: Math.floor((n.closeT - minutes * 60_000) / 1000) } as unknown as ChartDataPoint);
       for (const [t, v] of shown) pts.push({ time: Math.floor(t / 1000), value: v });
     }
     const dedup = pts.filter((q, i) => i === 0 || q.time > pts[i - 1].time);
     if (this.series && !manager.series.has(SERIES_KEY)) this.series = null; // the chart was rebuilt
     if (!this.series) {
       this.series = manager.addSeries(SERIES_KEY, 'line', dedup, {
-        color: PURPLE, lineWidth: 2, priceLineVisible: false, lastValueVisible: false, crosshairMarkerVisible: false,
+        color: 'rgba(0, 0, 0, 0)', lineWidth: 1, priceLineVisible: false, lastValueVisible: false, crosshairMarkerVisible: false,
       } as never);
       this.series?.attachPrimitive(this.prim);
     } else {
