@@ -1,116 +1,98 @@
-"""Load years of 1-minute history from the NinjaTrader exports into the app's database.
+"""Preload 1-minute history from MT5 into the app's database, so the chart and Replay can go back.
 
-The chart then scrolls (and Replay jumps) back as far as this goes. Only bars before the first
-bar already in the database are written, so the MT5 feed's own bars are never touched; running
-it again is safe (the database merges by timestamp).
+Asks the running MT5 price bridge (broker-service) for each week from ``--start`` to now and saves
+it through the database API. Running it again is safe: bars are saved by timestamp, so a repeat
+just rewrites the same MT5 bars.
 
-    python scripts/import_history.py --years 5
+    python scripts/import_history.py                      # ES, NQ, MES, MNQ from Jan 1 this year
+    python scripts/import_history.py --start 2021-01-01   # further back
 """
 
 from __future__ import annotations
 
 import argparse
-import glob
 import json
-import os
 import sys
 import time
 import urllib.error
 import urllib.parse
 import urllib.request
-
-import numpy as np
+from datetime import datetime, timezone
 
 DAY = 86_400_000
-# market in the app -> NinjaTrader export it takes prices from (micros trade at the same price)
-SOURCES = {"ES": "ES", "MES": "ES", "NQ": "NQ", "MNQ": "NQ"}
+WEEK = 7 * DAY
 
 
-def get(api: str, path: str, **params) -> object:
-    query = urllib.parse.urlencode({k: v for k, v in params.items() if v is not None})
-    url = f"{api}{path}?{query}"
-    with urllib.request.urlopen(url, timeout=120) as r:
+def get(url: str, headers: dict | None = None) -> object:
+    req = urllib.request.Request(url, headers=headers or {})
+    with urllib.request.urlopen(req, timeout=300) as r:
         return json.loads(r.read())
 
 
-def post(api: str, path: str, body: dict) -> object:
-    req = urllib.request.Request(f"{api}{path}", data=json.dumps(body).encode(), method="POST",
+def post(url: str, body: dict) -> object:
+    req = urllib.request.Request(url, data=json.dumps(body).encode(), method="POST",
                                  headers={"Content-Type": "application/json"})
     with urllib.request.urlopen(req, timeout=600) as r:
         return json.loads(r.read() or b"null")
 
 
-def has_bars(api: str, symbol: str, exchange: str, day_ms: int) -> bool:
-    rows = get(api, f"/candles/{symbol}", exchange=exchange, timeframe="M1",
-               start_ms=day_ms, end_ms=day_ms + 7 * DAY)
-    return isinstance(rows, list) and len(rows) > 0
-
-
-def first_bar_ms(api: str, symbol: str, exchange: str, lo: int, hi: int) -> int:
-    """Earliest week with bars (assumes the stored history has no gaps of more than a week)."""
-    if has_bars(api, symbol, exchange, lo):
-        return lo
-    if not has_bars(api, symbol, exchange, hi - 7 * DAY):
-        return hi
-    while hi - lo > 7 * DAY:
-        mid = (lo + hi) // 2
-        if has_bars(api, symbol, exchange, mid):
-            hi = mid
-        else:
-            lo = mid
-    rows = get(api, f"/candles/{symbol}", exchange=exchange, timeframe="M1",
-               start_ms=lo, end_ms=hi + 7 * DAY)
-    return min(int(r["timestamp_ms"]) for r in rows) if rows else hi
-
-
 def main() -> int:
     ap = argparse.ArgumentParser()
-    ap.add_argument("--years", type=float, default=5)
-    ap.add_argument("--api", default="http://localhost:8000")
-    ap.add_argument("--data", default=os.path.expanduser(r"~\es-sdev\data\processed"))
+    ap.add_argument("--start", default=f"{datetime.now(timezone.utc).year}-01-01", help="YYYY-MM-DD")
     ap.add_argument("--symbols", default="ES,NQ,MES,MNQ")
-    ap.add_argument("--batch", type=int, default=20_000)
+    ap.add_argument("--db", default="http://localhost:8000", help="the app's database API")
+    ap.add_argument("--mt5", default="http://localhost:8050", help="the MT5 price bridge")
     a = ap.parse_args()
 
+    start = int(datetime.fromisoformat(a.start).replace(tzinfo=timezone.utc).timestamp() * 1000)
     try:
-        markets = get(a.api, "/markets")
+        markets = get(f"{a.db}/markets")
     except urllib.error.URLError as e:
-        print(f"Can't reach the app's database at {a.api} ({e}). Start the app first.")
+        print(f"Can't reach the app's database at {a.db} ({e}). Start the app first.")
         return 1
-    now = int(time.time() * 1000)
-    start = now - int(a.years * 365.25 * DAY)
+    try:
+        get(f"{a.mt5}/health")
+    except urllib.error.URLError as e:
+        print(f"Can't reach the MT5 price bridge at {a.mt5} ({e}). Start it (mt5-broker.bat) first.")
+        return 1
+
     for symbol in [s.strip().upper() for s in a.symbols.split(",") if s.strip()]:
         market = next((m for m in markets if str(m["symbol"]).upper() == symbol
                        and "HYPER" not in str(m["exchange"]).upper()), None)
         if market is None:
-            print(f"{symbol}: not in the app's symbol list, skipped (add it with + first)")
-            continue
-        files = sorted(glob.glob(os.path.join(a.data, f"{SOURCES[symbol]}_m1_*.npz")))
-        if not files:
-            print(f"{symbol}: no {SOURCES[symbol]}_m1_*.npz in {a.data}, skipped")
+            print(f"{symbol}: not in the app's symbol list, skipped")
             continue
         exchange = market["exchange"]
-        until = first_bar_ms(a.api, symbol, exchange, start, now)
-        with np.load(files[-1], allow_pickle=True) as z:  # read each column once
-            t = z["t"].astype(np.int64)
-            o, h, lo, c, v = (z[k].astype(float) for k in ("o", "h", "l", "c", "v"))
-        keep = (t >= start) & (t < until)
-        idx = np.where(keep)[0]
-        print(f"{symbol}: writing {len(idx):,} bars from {files[-1].split(os.sep)[-1]} "
-              f"({time.strftime('%Y-%m-%d', time.gmtime(start / 1000))} to "
-              f"{time.strftime('%Y-%m-%d', time.gmtime(until / 1000))})", flush=True)
-        done = 0
-        for k in range(0, len(idx), a.batch):
-            w = idx[k:k + a.batch]
-            candles = [{"timestamp_ms": int(t[i]), "open": o[i], "high": h[i], "low": lo[i],
-                        "close": c[i], "volume": v[i]} for i in w.tolist()]
-            post(a.api, "/candles/historical", {
-                "symbol": symbol, "exchange": exchange, "candles": candles,
-                "start_ms": candles[0]["timestamp_ms"], "end_ms": candles[-1]["timestamp_ms"],
-            })
-            done += len(w)
-            print(f"  {done * 100 // len(idx)}%", end="\r", flush=True)
-        print(f"  {symbol} done          ")
+        # the database refuses the minute that is still open
+        now = (int(time.time() * 1000) // 60_000) * 60_000 - 1
+        total, empty_weeks = 0, 0
+        print(f"{symbol}: loading from {a.start} ...", flush=True)
+        t = start
+        while t <= now:
+            end = min(t + WEEK - 1, now)
+            q = urllib.parse.urlencode({"timeframe": "M1", "fromTs": t, "toTs": end})
+            try:
+                bars = get(f"{a.mt5}/symbols/{symbol}/trendbars?{q}", {"X-Account-Id": "1"})
+            except urllib.error.HTTPError as e:
+                print(f"  {symbol}: MT5 said {e.code} for the week of "
+                      f"{time.strftime('%Y-%m-%d', time.gmtime(t / 1000))}, skipped")
+                bars = []
+            candles = [{"timestamp_ms": int(b["t"]), "open": b["o"], "high": b["h"], "low": b["l"],
+                        "close": b["c"], "volume": b.get("v") or 0}
+                       for b in bars if t <= int(b["t"]) <= end]
+            if candles:
+                post(f"{a.db}/candles/historical", {
+                    "symbol": symbol, "exchange": exchange, "candles": candles,
+                    "start_ms": t, "end_ms": end,
+                })
+                total += len(candles)
+            else:
+                empty_weeks += 1
+            print(f"  {symbol}: up to {time.strftime('%Y-%m-%d', time.gmtime(end / 1000))}, "
+                  f"{total:,} bars", end="\r", flush=True)
+            t = end + 1
+        note = f" ({empty_weeks} weeks MT5 had nothing for)" if empty_weeks else ""
+        print(f"  {symbol} done: {total:,} bars{note}                    ")
     print("Finished. Reload the chart.")
     return 0
 

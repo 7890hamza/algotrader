@@ -1,11 +1,10 @@
 @echo off
-rem Loads 5 years of 1-minute ES / NQ / MES / MNQ history from the NinjaTrader exports
-rem (C:\Users\<you>\es-sdev\data\processed) into the app's database. Start the app first.
-rem Safe to run again. Change the years: import-history.bat 3
+rem Preloads 1-minute ES / NQ / MES / MNQ history from MT5 into the app, so the chart and Replay
+rem can go back. Start the app (and the MT5 price bridge) first. Safe to run again.
+rem Default: from January 1 of this year. Further back: import-history.bat 2021-01-01
 cd /d "%~dp0..\.."
-set YEARS=%1
-if "%YEARS%"=="" set YEARS=5
+set START=%1
 set PY=.venv-mt5\Scripts\python.exe
 if not exist "%PY%" set PY=python
-"%PY%" scripts\import_history.py --years %YEARS%
+if "%START%"=="" ("%PY%" scripts\import_history.py) else ("%PY%" scripts\import_history.py --start %START%)
 pause
