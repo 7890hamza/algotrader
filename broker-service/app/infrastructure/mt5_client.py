@@ -158,6 +158,10 @@ def front_month(names: list[str], root: str, today: date) -> str | None:
     return best[1] if best else None
 
 
+class Mt5NotDemoError(RuntimeError):
+    """MT5 is logged in to a real-money account while the bridge requires demo. Never retried."""
+
+
 class Mt5Client(BrokerPort, MarketDataPort):
     """Read-only MetaTrader 5 adapter implementing the broker ports."""
 
@@ -190,8 +194,18 @@ class Mt5Client(BrokerPort, MarketDataPort):
                     "pip install MetaTrader5"
                 ) from exc
             self._mt5 = mt5
-        await self._call(self._initialize)
-        self._connected = True
+        try:
+            await self._call(self._initialize)
+            self._connected = True
+        except Mt5NotDemoError:
+            raise  # safety: refuse to start on a real-money account
+        except Exception as exc:
+            # MT5 closed or not logged in yet: start anyway and keep trying in the background
+            # (the poll loop reconnects), so the bridge is ready the moment MT5 is.
+            logger.warning(
+                "MT5 not ready yet (%s). The bridge is up and retries every %.0f s - "
+                "open MT5 and log in to the demo account.", exc, RECONNECT_DELAY_SECONDS,
+            )
         self._poll_task = asyncio.create_task(self._poll_loop(), name="mt5-poll")
 
     async def disconnect(self) -> None:
@@ -233,7 +247,7 @@ class Mt5Client(BrokerPort, MarketDataPort):
             raise RuntimeError("MetaTrader 5 is open but not logged in to an account.")
         if self._settings.require_demo and account.trade_mode != ACCOUNT_TRADE_MODE_DEMO:
             mt5.shutdown()
-            raise RuntimeError(
+            raise Mt5NotDemoError(
                 f"MT5 is logged in to a non-demo account on server {account.server}. "
                 "Log in to a demo account, or set MT5_REQUIRE_DEMO=false if you really "
                 "mean to read prices from this account (this bridge never trades)."

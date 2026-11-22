@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import importlib.util
 import sys
 import time
@@ -153,6 +154,26 @@ class Mt5ClientTests(unittest.IsolatedAsyncioTestCase):
         client = Mt5Client(settings(), mt5_module=FakeMt5(demo=False))
         with self.assertRaisesRegex(RuntimeError, "non-demo"):
             await client._call(client._initialize)
+
+    async def test_starts_when_mt5_is_not_open_yet_and_connects_later(self) -> None:
+        fake = FakeMt5()
+        fake.initialize = lambda path=None: False      # MT5 closed / not logged in
+        client = Mt5Client(settings(), mt5_module=fake)
+        await client.connect()                           # must not raise
+        self.assertFalse(client.is_connected)
+        fake.initialize = lambda path=None: True       # user opens MT5
+        for _ in range(50):
+            if client.is_connected:
+                break
+            await asyncio.sleep(0.1)
+        self.assertTrue(client.is_connected)
+        await client.disconnect()
+
+    async def test_connect_still_refuses_live_account(self) -> None:
+        client = Mt5Client(settings(), mt5_module=FakeMt5(demo=False))
+        with self.assertRaisesRegex(RuntimeError, "non-demo"):
+            await client.connect()
+        self.assertIsNone(client._poll_task)
 
     async def test_live_account_allowed_when_opted_in(self) -> None:
         client = Mt5Client(settings(require_demo=False), mt5_module=FakeMt5(demo=False))
