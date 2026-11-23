@@ -149,6 +149,7 @@ import SetupsPanel from "@/components/Chart/SetupsPanel.vue";
 import ReplayBar from "@/components/Chart/ReplayBar.vue";
 import { useReplayStore } from "@/stores/replayStore";
 import { CmeNapLink } from "@/utils/chart/cmeNapLink";
+import { DailyCandleLink } from "@/utils/chart/dailyCandleLink";
 import { barAtOrBefore, IS_REPLAY, REPLAY_FETCH_LIMIT, replayEndMs } from "@/utils/replay";
 import { ReplayCurtainPrimitive } from "@/utils/chart/replayCurtainPrimitive";
 import AmTbrGuideOverlay from "@/components/Chart/AmTbrGuideOverlay.vue";
@@ -231,6 +232,7 @@ interface ChartAreaData {
   retraceTool: RetraceToolController | null;
   gamePlanLink: GamePlanChartLink | null;
   cmeNapLink: CmeNapLink | null;
+  dailyCandleLink: DailyCandleLink | null;
   rtSelected: RetraceDrawing | null;
 }
 
@@ -311,6 +313,7 @@ export default defineComponent({
       retraceTool: null,
       gamePlanLink: null,
       cmeNapLink: null,
+      dailyCandleLink: null,
       rtSelected: null,
     };
   },
@@ -465,6 +468,12 @@ export default defineComponent({
         cursorMs: () => (IS_REPLAY ? useReplayStore().cursorMs : Number.POSITIVE_INFINITY),
         onChange: () => { if (IS_REPLAY) this.replayExtras(); },
       }));
+      this.dailyCandleLink = markRaw(new DailyCandleLink({
+        getSeries: () => this.ohlcSeriesRef,
+        candles: () => this.candlesticksStore.data,
+        barMinutes: () => TIMEFRAME_TO_MINUTES[this.currentChartSessionKey().timeframe as TimeframeCode] ?? 1,
+        cursorMs: () => (IS_REPLAY ? useReplayStore().cursorMs : Number.POSITIVE_INFINITY),
+      }));
       this.gamePlanLink = markRaw(new GamePlanChartLink({
         getSeries: () => this.ohlcSeriesRef,
         getSymbol: () => this.currentMarketStore.symbol,
@@ -516,6 +525,7 @@ export default defineComponent({
     this.retraceTool?.destroy();
     this.gamePlanLink?.destroy();
     this.cmeNapLink?.destroy();
+    this.dailyCandleLink?.destroy();
     const chartContainer = this.getChartContainer();
     if (chartContainer) {
       chartContainer.removeEventListener("wheel", this.onWheelPassive);
@@ -848,6 +858,7 @@ export default defineComponent({
       this.retraceTool?.setPane(paneHtmlElement);
       this.retraceTool?.syncSeries();
       this.gamePlanLink?.syncSeries();
+      this.dailyCandleLink?.syncSeries();
       this.backtestOverlayTarget = paneHtmlElement
         ? getOrCreatePaneOverlayWrapper(paneHtmlElement)
         : null;
@@ -963,6 +974,7 @@ export default defineComponent({
         this.replayCurtain = markRaw(new ReplayCurtainPrimitive("#131722"));
         series.attachPrimitive(this.replayCurtain);
         this.gamePlanLink?.reattach();
+        this.dailyCandleLink?.reattach();
       }
       this.replayExtras();
       if (scrollToCursor || replay.playing) this.scrollToRealTime();

@@ -33,6 +33,25 @@
 
     <n-button
       round
+      class="game-plan-button daily-candle-button"
+      :class="{ 'daily-candle-button--active': dailyCandleStore.visible }"
+      data-testid="topbar-daily-candle"
+      title="Daily candle: how Austin (levels, stat windows) and Riley (timed boxes, P30/P50/P70) read each day. No trades."
+      :aria-pressed="dailyCandleStore.visible"
+      @click="dailyCandleStore.toggle()"
+    >Daily candle</n-button>
+    <span v-if="dailyCandleStore.visible" class="dc-who" data-testid="daily-candle-who">
+      <button
+        v-for="w in (['austin', 'riley', 'both'] as const)"
+        :key="w"
+        type="button"
+        :class="['dc-who__btn', `dc-who__btn--${w}`, { 'dc-who__btn--on': dailyCandleStore.who === w }]"
+        @click="dailyCandleStore.setWho(w)"
+      >{{ w === 'austin' ? 'Austin' : w === 'riley' ? 'Riley' : 'Both' }}</button>
+    </span>
+
+    <n-button
+      round
       class="game-plan-button"
       :class="{ 'game-plan-button--active': domStore.visible }"
       data-testid="topbar-memory-dom"
@@ -183,6 +202,7 @@ import { HandRightOutline, ResizeOutline } from '@/icons';
 import { useCurrentMarketStore } from '@/stores/currentMarketStore';
 import { useDomStore } from '@/stores/domStore';
 import { useCmeNapStore } from '@/stores/cmeNapStore';
+import { useDailyCandleStore } from '@/stores/dailyCandleStore';
 import { useGamePlanStore } from '@/stores/gamePlanStore';
 import { useModalStore } from '@/stores/modalStore';
 import type { ChartLayout } from '@/utils/chartPane';
@@ -223,6 +243,7 @@ const currentMarketStore = useCurrentMarketStore();
 const modalStore = useModalStore();
 const gamePlanStore = useGamePlanStore();
 const cmeNapStore = useCmeNapStore();
+const dailyCandleStore = useDailyCandleStore();
 const domStore = useDomStore();
 const currentSymbol = computed(() => currentMarketStore.symbol);
 const selectedChartInteractionModeColor = '#7fe7c4';
@@ -267,6 +288,12 @@ function toggleMode(mode: ChartInteractionMode): void {
 .position-button--retrace { color: #e9c46a; }
 .game-plan-button--active { color: #e9c46a; background: rgba(233, 196, 106, 0.15); }
 .cme-nap-button--active { color: #c9a6ff; background: rgba(176, 124, 255, 0.16); }
+.daily-candle-button--active { color: #f0c27a; background: rgba(227, 163, 61, 0.16); }
+.dc-who { display: inline-flex; align-self: center; gap: 2px; padding: 2px; border-radius: 12px; background: rgba(255, 255, 255, 0.06); }
+.dc-who__btn { border: 0; background: transparent; color: #9aa3b2; font: inherit; font-size: 12px; padding: 3px 10px; border-radius: 10px; cursor: pointer; }
+.dc-who__btn--on.dc-who__btn--austin { color: #e3a33d; background: rgba(227, 163, 61, 0.18); }
+.dc-who__btn--on.dc-who__btn--riley { color: #2bb5b0; background: rgba(43, 181, 176, 0.18); }
+.dc-who__btn--on.dc-who__btn--both { color: #ffffff; background: rgba(255, 255, 255, 0.14); }
 .position-button--active.position-button--retrace { background: rgba(233, 196, 106, 0.2); }
 
 .active-chart-note {

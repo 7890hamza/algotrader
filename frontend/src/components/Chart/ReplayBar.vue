@@ -34,6 +34,7 @@
         </optgroup>
       </select>
       <input id="replay-jump" v-model="pickDay" type="date" :max="today" aria-label="Replay another day" @change="start">
+      <span v-if="dailyCandle.visible && dailyCandle.score" class="score" data-testid="daily-candle-score">{{ dailyCandle.score }}</span>
       <span v-if="cmeNap.visible && cmeNap.tradeScore" class="score" data-testid="catch-up-score">{{ cmeNap.tradeScore }}</span>
       <button type="button" class="exit" @click="exit">Back to live</button>
     </template>
@@ -45,6 +46,7 @@ import { computed, ref } from 'vue';
 
 import stackMoments from '@/data/stackMoments.json';
 import { useCmeNapStore } from '@/stores/cmeNapStore';
+import { useDailyCandleStore } from '@/stores/dailyCandleStore';
 import { useReplayStore } from '@/stores/replayStore';
 import { DEFAULT_CHART_TIME_ZONE } from '@/utils/chart/chartTimeZone';
 import { cmeDayStartMs, REPLAY_START_MS, replayUrl } from '@/utils/replay';
@@ -53,6 +55,7 @@ defineOptions({ name: 'ReplayBar' });
 
 const replay = useReplayStore();
 const cmeNap = useCmeNapStore();
+const dailyCandle = useDailyCandleStore();
 const ny = (opts: Intl.DateTimeFormatOptions) => new Intl.DateTimeFormat('en-CA', { timeZone: 'America/New_York', ...opts });
 const today = ny({ year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date());
 const pickDay = ref<string>(REPLAY_START_MS ? ny({ year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date(REPLAY_START_MS + 6 * 3_600_000)) : '');
