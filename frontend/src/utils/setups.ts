@@ -228,6 +228,65 @@ export function statRuns(
   return out;
 }
 
+// ---- Run fade: trade the give-back of a big stat run toward where it started ----
+
+export interface FadeSettings { minCount: number; trigger: number; target: number; pad: number; maxHoldMs: number }
+export interface RunFade {
+  run: StatRun;
+  /** direction of the TRADE (opposite to the run) */
+  dir: 1 | -1;
+  entryT: number; entry: number; stop: number; target: number;
+  exitT: number | null; how: 'target' | 'stop' | 'time' | null; pts: number | null;
+}
+type Bar = { timestamp_ms: number; high: number | string; low: number | string; close: number | string };
+
+/**
+ * After a run of `minCount`+ stats in a row, wait for a 1-minute close back `trigger` of the run box
+ * (0.25 = a quarter of the way from the run's far end toward its start). Then fade it: target
+ * `target` of the way from entry back to where the run started, stop `pad` past the run's extreme.
+ * Tested on ES Jan-Nov 2026 (8+ stats, 0.25, 0.5): 228 trades, 80% reached target, about +2.9 pts each
+ * after 0.5 pt costs. Odds, not a promise: about 1 in 5 run on and hit the stop.
+ */
+export function runFades(
+  levels: Parameters<typeof statRuns>[0], bars: readonly Bar[], t: number, dayEnd: number, s: FadeSettings,
+): RunFade[] {
+  const out: RunFade[] = [];
+  for (const run of statRuns(levels, t, s.minCount)) {
+    const h = run.hi - run.lo;
+    if (!(h > 0)) continue;
+    const up = run.dir > 0;
+    const far = up ? run.hi : run.lo; const base = up ? run.lo : run.hi;
+    const trig = far - run.dir * s.trigger * h;
+    const end = Math.min(dayEnd, run.to + s.maxHoldMs);
+    let ext = far; let e = -1;
+    for (let i = 0; i < bars.length; i++) {
+      const b = bars[i]; const ts = b.timestamp_ms;
+      if (ts < run.from) continue;
+      if (ts > t || ts >= end) break;
+      ext = up ? Math.max(ext, Number(b.high)) : Math.min(ext, Number(b.low));
+      if (ts > run.to && (up ? Number(b.close) < trig : Number(b.close) > trig)) { e = i; break; }
+    }
+    if (e < 0) continue;
+    const dir = (up ? -1 : 1) as 1 | -1;
+    const entry = Number(bars[e].close);
+    const stop = ext - dir * s.pad;
+    const target = entry + dir * s.target * Math.abs(entry - base);
+    const f: RunFade = { run, dir, entryT: bars[e].timestamp_ms, entry, stop, target, exitT: null, how: null, pts: null };
+    let last: Bar | null = null;
+    for (let i = e + 1; i < bars.length; i++) {
+      const b = bars[i];
+      if (b.timestamp_ms > t) break;
+      if (b.timestamp_ms >= end) { f.exitT = last?.timestamp_ms ?? f.entryT; f.how = 'time'; f.pts = ((last ? Number(last.close) : entry) - entry) * dir; break; }
+      last = b;
+      const hi = Number(b.high); const lo = Number(b.low);
+      if (dir > 0 ? lo <= stop : hi >= stop) { f.exitT = b.timestamp_ms; f.how = 'stop'; f.pts = -Math.abs(stop - entry); break; }
+      if (dir > 0 ? hi >= target : lo <= target) { f.exitT = b.timestamp_ms; f.how = 'target'; f.pts = Math.abs(target - entry); break; }
+    }
+    out.push(f);
+  }
+  return out;
+}
+
 // ---- Stats ladder: how far the next open stats are, above and below price ----
 
 export interface LadderSide { next: number | null; counts: number[] }

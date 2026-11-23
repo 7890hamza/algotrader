@@ -10,7 +10,7 @@ import type {
   Time,
 } from 'lightweight-charts';
 
-import { statRuns, statsAhead, statsLadder, type StatRun } from '../setups';
+import { runFades, statRuns, statsAhead, statsLadder, type RunFade, type StatRun } from '../setups';
 
 import { buildBoard, isCarried, levelOdds, levelStatus, type DayPlan, type PlanLevel } from './gamePlan';
 
@@ -46,12 +46,15 @@ interface RunBox { x0: number; x1: number; y0: number; y1: number; up: boolean; 
 /** Heads-up bracket: a column just right of the last candle, from price to the farthest open stat in reach. */
 interface AheadBox { x: number; yPrice: number; yFar: number; ys: number[]; up: boolean; text: string }
 
+/** Run fade trade box: like the QuickTrade box - red to the stop, green to the target. */
+interface FadeBox { x0: number; x1: number; yEntry: number; yStop: number; yTarget: number; text: string; result: string | null; win: boolean | null }
+
 /** A small text tag (the stats ladder), drawn by price. */
 interface Note { x: number; y: number; text: string; up: boolean }
 
 class GamePlanRenderer implements IPrimitivePaneRenderer {
   constructor(private readonly lines: readonly Line[], private readonly runs: readonly RunBox[] = [], private readonly ahead: readonly AheadBox[] = [],
-    private readonly notes: readonly Note[] = []) {}
+    private readonly notes: readonly Note[] = [], private readonly fades: readonly FadeBox[] = []) {}
 
   draw(target: CanvasRenderingTarget2D): void {
     target.useMediaCoordinateSpace(({ context: ctx, mediaSize }) => {
@@ -94,6 +97,31 @@ class GamePlanRenderer implements IPrimitivePaneRenderer {
         ctx.strokeRect(crisp(lx - 3), crisp(n.y - 8), Math.round(tw + 8), 16);
         ctx.fillStyle = n.up ? '#5fd3a0' : '#ff8a7a';
         ctx.fillText(n.text, lx + 1, n.y + 0.5);
+      }
+      // Run fades: entry line, red zone to the stop, green zone to the target, result at the exit.
+      for (const f of this.fades) {
+        const x = Math.min(f.x0, f.x1); const w = Math.max(24, Math.abs(f.x1 - f.x0));
+        const zone = (ya: number, yb: number, fill: string) => { ctx.fillStyle = fill; ctx.fillRect(x, Math.min(ya, yb), w, Math.abs(yb - ya)); };
+        zone(f.yEntry, f.yStop, 'rgba(163, 45, 45, 0.30)');
+        zone(f.yEntry, f.yTarget, 'rgba(59, 109, 17, 0.30)');
+        ctx.strokeStyle = '#E24B4A'; ctx.lineWidth = 1.5;
+        ctx.beginPath(); ctx.moveTo(x, crisp(f.yStop)); ctx.lineTo(x + w, crisp(f.yStop)); ctx.stroke();
+        ctx.strokeStyle = '#8fd15a';
+        ctx.beginPath(); ctx.moveTo(x, crisp(f.yTarget)); ctx.lineTo(x + w, crisp(f.yTarget)); ctx.stroke();
+        ctx.strokeStyle = '#d8dbe2'; ctx.lineWidth = 1; ctx.setLineDash([4, 3]);
+        ctx.beginPath(); ctx.moveTo(x, crisp(f.yEntry)); ctx.lineTo(x + w, crisp(f.yEntry)); ctx.stroke(); ctx.setLineDash([]);
+        ctx.font = '600 11px -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif';
+        ctx.textAlign = 'left'; ctx.textBaseline = 'bottom';
+        const top = Math.min(f.yStop, f.yTarget) - 4;
+        const tw = ctx.measureText(f.text).width;
+        ctx.fillStyle = 'rgba(19, 23, 34, 0.9)'; ctx.fillRect(x, top - 14, tw + 8, 15);
+        ctx.fillStyle = '#e9b040'; ctx.fillText(f.text, x + 4, top);
+        if (f.result) {
+          const rw = ctx.measureText(f.result).width;
+          ctx.fillStyle = f.win === null ? '#2a5b8f' : f.win ? '#3B6D11' : '#A32D2D';
+          ctx.fillRect(x + w + 4, f.yEntry - 9, rw + 10, 18);
+          ctx.fillStyle = '#fff'; ctx.textBaseline = 'middle'; ctx.fillText(f.result, x + w + 9, f.yEntry + 0.5);
+        }
       }
       // Stat runs: a soft box around the checkmarks that came one after another.
       for (const r of this.runs) {
@@ -180,7 +208,9 @@ export class GamePlanPrimitive implements ISeriesPrimitive<Time> {
   private params: SeriesAttachedParameter<Time, SeriesType> | null = null;
   private plan: DayPlan | null = null;
   /** heads-up settings (from the Game Plan store) */
-  ahead = { minCount: 4, reachES: 12, reachNQ: 50, runMin: 4, ladder: true };
+  ahead = { minCount: 4, reachES: 12, reachNQ: 50, runMin: 4, ladder: true, fade: true, fadeMin: 8, fadeTrigger: 0.25, fadeTarget: 0.5 };
+  /** the chart's candles, for the run fade */
+  bars: readonly { timestamp_ms: number; high: number | string; low: number | string; close: number | string }[] = [];
   private t = 0;
   private price = 0;
   private readonly views: readonly IPrimitivePaneView[] = [new GamePlanPaneView(this), new GamePlanAheadView(this)];
@@ -302,6 +332,28 @@ export class GamePlanPrimitive implements ISeriesPrimitive<Time> {
         lines.push({ y: Number(y), x0: Math.max(0, hx - STUB_PX), x1: hx, color: l.color, dashed: false, faded: true, hitX: hx, label: null });
       }
     }
-    return lines.length || runs.length ? new GamePlanRenderer(lines, runs) : null;
+    // Run fades (trade the give-back of a big run, like the QuickTrade box)
+    const fades: FadeBox[] = [];
+    if (this.ahead.fade && this.bars.length) {
+      const nq = (plan.market?.family ?? plan.symbol ?? '').toUpperCase().includes('NQ');
+      const found: RunFade[] = runFades(plan.levels, this.bars, this.t, plan.end, {
+        minCount: this.ahead.fadeMin, trigger: this.ahead.fadeTrigger, target: this.ahead.fadeTarget,
+        pad: nq ? 4 : 1, maxHoldMs: 6 * 3600_000,
+      });
+      const r = (v: number) => (Math.round(v * 4) / 4).toLocaleString('en-US', { maximumFractionDigits: 2 });
+      for (const f of found) {
+        const x0 = this.x(f.entryT); const x1 = this.x(f.exitT ?? this.t);
+        const ye = series.priceToCoordinate(f.entry); const ys = series.priceToCoordinate(f.stop); const yt = series.priceToCoordinate(f.target);
+        if (x0 === null || x1 === null || ye === null || ys === null || yt === null) continue;
+        const live = f.how === null ? (this.price - f.entry) * f.dir : null;
+        const result = f.how === null
+          ? `open ${live! >= 0 ? '+' : ''}${r(live!)} pts`
+          : `${f.how === 'target' ? 'target' : f.how === 'stop' ? 'stop' : 'time'} ${f.pts! >= 0 ? '+' : ''}${r(f.pts!)} pts`;
+        fades.push({ x0, x1, yEntry: Number(ye), yStop: Number(ys), yTarget: Number(yt), result,
+          win: f.how === null ? null : f.pts! > 0,
+          text: `Run fade ${f.dir > 0 ? '▲' : '▼'} (${f.run.count}-stat run) · target ${r(f.target)} · stop ${r(f.stop)}` });
+      }
+    }
+    return lines.length || runs.length || fades.length ? new GamePlanRenderer(lines, runs, [], [], fades) : null;
   }
 }

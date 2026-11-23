@@ -91,6 +91,20 @@
         <label><input id="gp-ladder" type="checkbox" :checked="store.ahead.ladder" style="width:auto"
           @change="store.setAhead({ ladder: ($event.target as HTMLInputElement).checked })"> next-stat distances by price</label>
       </p>
+      <p class="gp-ahead" data-testid="game-plan-fade">
+        <span class="gp-label">Run fade</span>
+        <label><input id="gp-fade" type="checkbox" :checked="store.ahead.fade" style="width:auto"
+          @change="store.setAhead({ fade: ($event.target as HTMLInputElement).checked })"> after</label>
+        <input id="gp-fade-min" type="number" min="2" max="40" step="1" :value="store.ahead.fadeMin" aria-label="Stats in the run"
+          @change="store.setAhead({ fadeMin: Number(($event.target as HTMLInputElement).value) })">
+        stats, enter when it gives back
+        <input id="gp-fade-trig" type="number" min="5" max="95" step="5" :value="Math.round(store.ahead.fadeTrigger * 100)" aria-label="Give-back percent"
+          @change="store.setAhead({ fadeTrigger: Number(($event.target as HTMLInputElement).value) / 100 })">
+        %, aim
+        <input id="gp-fade-tgt" type="number" min="10" max="100" step="5" :value="Math.round(store.ahead.fadeTarget * 100)" aria-label="Target percent"
+          @change="store.setAhead({ fadeTarget: Number(($event.target as HTMLInputElement).value) / 100 })">
+        % back to the start
+      </p>
       <p class="gp-foot">{{ plan.source || "ES 2016-2025" }} stats. Odds, never trade calls. ↻ = a session missed it and it carried over.</p>
     </template>
   </aside>

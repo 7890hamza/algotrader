@@ -20,6 +20,8 @@ export class GamePlanChartLink {
       getSeries(): ManagedSeriesApi | null;
       getSymbol(): string | null;
       lastBar(): { t: number; close: number } | null;
+      /** the chart's loaded candles (for the run fade) */
+      candles?(): readonly { timestamp_ms: number; high: number | string; low: number | string; close: number | string }[];
     },
   ) {
     const store = useGamePlanStore();
@@ -64,6 +66,7 @@ export class GamePlanChartLink {
       price = bar.close;
     }
     this.primitive.ahead = store.ahead;
+    this.primitive.bars = this.host.candles?.() ?? [];
     this.primitive.set(plan, t, price);
   }
 

@@ -468,6 +468,7 @@ export default defineComponent({
       this.gamePlanLink = markRaw(new GamePlanChartLink({
         getSeries: () => this.ohlcSeriesRef,
         getSymbol: () => this.currentMarketStore.symbol,
+        candles: () => this.candlesticksStore.data,
         lastBar: () => {
           const bars = this.candlesticksStore.data;
           const bar = IS_REPLAY ? barAtOrBefore(bars, useReplayStore().cursorMs) : bars.length ? bars[bars.length - 1] : null;
