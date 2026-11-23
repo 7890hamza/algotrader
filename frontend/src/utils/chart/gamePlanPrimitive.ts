@@ -49,12 +49,33 @@ interface AheadBox { x: number; yPrice: number; yFar: number; ys: number[]; up: 
 /** Run fade trade box: like the QuickTrade box - red to the stop, green to the target. */
 interface FadeBox { x0: number; x1: number; yEntry: number; yStop: number; yTarget: number; text: string; result: string | null; win: boolean | null }
 
+/** The "I" measuring tool (like the QuickTrade box): a purple bracket between two prices, labelled in points. */
+interface Ruler { x: number; ya: number; yb: number; text: string }
+
+const fmtPts = (v: number) => (v >= 10 ? (Math.round(v * 4) / 4).toFixed(2).replace(/\.?0+$/, '') : (Math.round(v * 4) / 4).toString());
+
+function drawRuler(ctx: CanvasRenderingContext2D, r: Ruler, width: number): void {
+  ctx.strokeStyle = '#8f87e6'; ctx.lineWidth = 1.5; ctx.setLineDash([]);
+  const x = crisp(r.x);
+  ctx.beginPath(); ctx.moveTo(x, r.ya); ctx.lineTo(x, r.yb); ctx.stroke();
+  for (const y of [r.ya, r.yb]) { ctx.beginPath(); ctx.moveTo(x - 5, crisp(y)); ctx.lineTo(x + 5, crisp(y)); ctx.stroke(); }
+  ctx.font = '600 11px -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif';
+  ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
+  const tw = ctx.measureText(r.text).width;
+  const ly = (r.ya + r.yb) / 2;
+  const lx = r.x + 8 + tw + 10 > width ? r.x - tw - 18 : r.x + 8;
+  ctx.fillStyle = '#2b2850'; ctx.fillRect(lx, ly - 9, tw + 10, 18);
+  ctx.strokeStyle = '#8f87e6'; ctx.lineWidth = 0.8; ctx.strokeRect(crisp(lx), crisp(ly - 9), Math.round(tw + 10), 18);
+  ctx.fillStyle = '#cfcaff'; ctx.fillText(r.text, lx + 5, ly + 0.5);
+}
+
 /** A small text tag (the stats ladder), drawn by price. */
 interface Note { x: number; y: number; text: string; up: boolean }
 
 class GamePlanRenderer implements IPrimitivePaneRenderer {
   constructor(private readonly lines: readonly Line[], private readonly runs: readonly RunBox[] = [], private readonly ahead: readonly AheadBox[] = [],
-    private readonly notes: readonly Note[] = [], private readonly fades: readonly FadeBox[] = []) {}
+    private readonly notes: readonly Note[] = [], private readonly fades: readonly FadeBox[] = [],
+    private readonly rulers: readonly Ruler[] = []) {}
 
   draw(target: CanvasRenderingTarget2D): void {
     target.useMediaCoordinateSpace(({ context: ctx, mediaSize }) => {
@@ -83,6 +104,7 @@ class GamePlanRenderer implements IPrimitivePaneRenderer {
         ctx.fillStyle = a.up ? '#5fd3a0' : '#ff8a7a';
         ctx.fillText(a.text, lx + 1, ly + 0.5);
       }
+      for (const r of this.rulers) drawRuler(ctx, r, mediaSize.width);
       // Stats ladder: "▲ next 45 pts · 3 within 50 · 17 within 150"
       for (const n of this.notes) {
         ctx.font = '600 11px -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif';
@@ -282,7 +304,18 @@ export class GamePlanPrimitive implements ISeriesPrimitive<Time> {
           text: `${up ? '▲' : '▼'} next stat ${f(s.next)} pts · ${s.counts[0]} within ${tiers[0]} · ${s.counts[1]} within ${tiers[1]}` });
       }
     }
-    return aheads.length || notes.length ? new GamePlanRenderer([], [], aheads, notes) : null;
+    // "I" from price back to where the latest run started
+    const rulers: Ruler[] = [];
+    const last = statRuns(plan.levels, this.t, this.ahead.runMin).pop();
+    if (last && nowX !== null && yNow !== null && this.price) {
+      // from price to the far end of the run (its low for a run down, its high for a run up)
+      const end = last.dir > 0 ? last.hi : last.lo;
+      const ys = series.priceToCoordinate(end);
+      if (ys !== null && Math.abs(Number(ys) - Number(yNow)) > 4)
+        rulers.push({ x: nowX + 6, ya: Number(yNow), yb: Number(ys),
+          text: `${fmtPts(Math.abs(this.price - end))} pts ${this.price > end ? 'above' : 'below'} the run ${last.dir > 0 ? 'high' : 'low'}` });
+    }
+    return aheads.length || notes.length || rulers.length ? new GamePlanRenderer([], [], aheads, notes, [], rulers) : null;
   }
 
   createRenderer(): IPrimitivePaneRenderer | null {
@@ -317,11 +350,13 @@ export class GamePlanPrimitive implements ISeriesPrimitive<Time> {
       });
     }
     const runs: RunBox[] = [];
+    const boxRulers: Ruler[] = [];
     for (const r of statRuns(plan.levels, this.t, this.ahead.runMin) as StatRun[]) {
       const x0 = this.x(r.from); const x1 = this.x(r.to);
       const y0 = series.priceToCoordinate(r.lo); const y1 = series.priceToCoordinate(r.hi);
       if (x0 === null || x1 === null || y0 === null || y1 === null) continue;
       runs.push({ x0, x1, y0: Number(y0), y1: Number(y1), up: r.dir > 0, text: `${r.count} stats in a row ${r.dir > 0 ? '▲' : '▼'}` });
+      boxRulers.push({ x: Math.max(x0, x1) + 12, ya: Number(y0), yb: Number(y1), text: `${fmtPts(r.hi - r.lo)} pts` });
     }
     // Every checkmark inside a run, not only the latest few, so the stack reads as one.
     for (const r of statRuns(plan.levels, this.t, this.ahead.runMin)) {
@@ -354,6 +389,6 @@ export class GamePlanPrimitive implements ISeriesPrimitive<Time> {
           text: `Run fade ${f.dir > 0 ? '▲' : '▼'} (${f.run.count}-stat run) · target ${r(f.target)} · stop ${r(f.stop)}` });
       }
     }
-    return lines.length || runs.length || fades.length ? new GamePlanRenderer(lines, runs, [], [], fades) : null;
+    return lines.length || runs.length || fades.length || boxRulers.length ? new GamePlanRenderer(lines, runs, [], [], fades, boxRulers) : null;
   }
 }
