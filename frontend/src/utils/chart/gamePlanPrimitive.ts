@@ -10,7 +10,7 @@ import type {
   Time,
 } from 'lightweight-charts';
 
-import { statRuns, statsAhead, type StatRun } from '../setups';
+import { statRuns, statsAhead, statsLadder, type StatRun } from '../setups';
 
 import { buildBoard, isCarried, levelOdds, levelStatus, type DayPlan, type PlanLevel } from './gamePlan';
 
@@ -46,8 +46,12 @@ interface RunBox { x0: number; x1: number; y0: number; y1: number; up: boolean; 
 /** Heads-up bracket: a column just right of the last candle, from price to the farthest open stat in reach. */
 interface AheadBox { x: number; yPrice: number; yFar: number; ys: number[]; up: boolean; text: string }
 
+/** A small text tag (the stats ladder), drawn by price. */
+interface Note { x: number; y: number; text: string; up: boolean }
+
 class GamePlanRenderer implements IPrimitivePaneRenderer {
-  constructor(private readonly lines: readonly Line[], private readonly runs: readonly RunBox[] = [], private readonly ahead: readonly AheadBox[] = []) {}
+  constructor(private readonly lines: readonly Line[], private readonly runs: readonly RunBox[] = [], private readonly ahead: readonly AheadBox[] = [],
+    private readonly notes: readonly Note[] = []) {}
 
   draw(target: CanvasRenderingTarget2D): void {
     target.useMediaCoordinateSpace(({ context: ctx, mediaSize }) => {
@@ -75,6 +79,21 @@ class GamePlanRenderer implements IPrimitivePaneRenderer {
         ctx.fillRect(lx - 3, ly - 8, tw + 8, 16);
         ctx.fillStyle = a.up ? '#5fd3a0' : '#ff8a7a';
         ctx.fillText(a.text, lx + 1, ly + 0.5);
+      }
+      // Stats ladder: "▲ next 45 pts · 3 within 50 · 17 within 150"
+      for (const n of this.notes) {
+        ctx.font = '600 11px -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif';
+        ctx.textAlign = 'left';
+        ctx.textBaseline = 'middle';
+        const tw = ctx.measureText(n.text).width;
+        const lx = Math.max(4, Math.min(n.x, mediaSize.width - tw - 12));
+        ctx.fillStyle = 'rgba(19, 23, 34, 0.92)';
+        ctx.fillRect(lx - 3, n.y - 8, tw + 8, 16);
+        ctx.strokeStyle = n.up ? 'rgba(47, 182, 124, 0.55)' : 'rgba(224, 87, 74, 0.55)';
+        ctx.lineWidth = 1;
+        ctx.strokeRect(crisp(lx - 3), crisp(n.y - 8), Math.round(tw + 8), 16);
+        ctx.fillStyle = n.up ? '#5fd3a0' : '#ff8a7a';
+        ctx.fillText(n.text, lx + 1, n.y + 0.5);
       }
       // Stat runs: a soft box around the checkmarks that came one after another.
       for (const r of this.runs) {
@@ -161,7 +180,7 @@ export class GamePlanPrimitive implements ISeriesPrimitive<Time> {
   private params: SeriesAttachedParameter<Time, SeriesType> | null = null;
   private plan: DayPlan | null = null;
   /** heads-up settings (from the Game Plan store) */
-  ahead = { minCount: 4, reachES: 12, reachNQ: 50 };
+  ahead = { minCount: 4, reachES: 12, reachNQ: 50, runMin: 4, ladder: true };
   private t = 0;
   private price = 0;
   private readonly views: readonly IPrimitivePaneView[] = [new GamePlanPaneView(this), new GamePlanAheadView(this)];
@@ -219,7 +238,21 @@ export class GamePlanPrimitive implements ISeriesPrimitive<Time> {
           text: `${up ? '▲' : '▼'} ${st.count} stats within ${pts(Math.abs(st.far - this.price))} pts` });
       }
     }
-    return aheads.length ? new GamePlanRenderer([], [], aheads) : null;
+    // Stats ladder by price, always on (unless switched off): distance to the next stats each way.
+    const notes: Note[] = [];
+    if (this.ahead.ladder && nowX !== null && yNow !== null && this.price) {
+      const nq = (plan.market?.family ?? plan.symbol ?? '').toUpperCase().includes('NQ');
+      const tiers = nq ? [100, 400] : [25, 100];
+      const lad = statsLadder(plan.levels, this.t, this.price, tiers);
+      const f = (v: number) => (v >= 10 ? Math.round(v).toString() : (Math.round(v * 4) / 4).toString());
+      const shift = aheads.length ? 40 : 0;     // keep clear of a heads-up label
+      for (const [s, up] of [[lad.up, true], [lad.down, false]] as const) {
+        if (s.next === null) continue;
+        notes.push({ x: nowX + 14, y: Number(yNow) + (up ? -(26 + shift) : 26 + shift), up,
+          text: `${up ? '▲' : '▼'} next stat ${f(s.next)} pts · ${s.counts[0]} within ${tiers[0]} · ${s.counts[1]} within ${tiers[1]}` });
+      }
+    }
+    return aheads.length || notes.length ? new GamePlanRenderer([], [], aheads, notes) : null;
   }
 
   createRenderer(): IPrimitivePaneRenderer | null {
@@ -254,14 +287,14 @@ export class GamePlanPrimitive implements ISeriesPrimitive<Time> {
       });
     }
     const runs: RunBox[] = [];
-    for (const r of statRuns(plan.levels, this.t, 4) as StatRun[]) {
+    for (const r of statRuns(plan.levels, this.t, this.ahead.runMin) as StatRun[]) {
       const x0 = this.x(r.from); const x1 = this.x(r.to);
       const y0 = series.priceToCoordinate(r.lo); const y1 = series.priceToCoordinate(r.hi);
       if (x0 === null || x1 === null || y0 === null || y1 === null) continue;
       runs.push({ x0, x1, y0: Number(y0), y1: Number(y1), up: r.dir > 0, text: `${r.count} stats in a row ${r.dir > 0 ? '▲' : '▼'}` });
     }
     // Every checkmark inside a run, not only the latest few, so the stack reads as one.
-    for (const r of statRuns(plan.levels, this.t, 4)) {
+    for (const r of statRuns(plan.levels, this.t, this.ahead.runMin)) {
       for (const l of plan.levels) {
         if (l.hitAt === null || l.hitAt < r.from || l.hitAt > r.to || l.kind !== 'target' || lines.some((x) => x.hitX !== null && x.y === series.priceToCoordinate(l.price))) continue;
         const y = series.priceToCoordinate(l.price); const hx = this.x(l.hitAt);

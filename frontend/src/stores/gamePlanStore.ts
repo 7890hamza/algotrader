@@ -39,8 +39,9 @@ const VISIBLE_KEY = 'algotrader_game_plan_visible';
 const AHEAD_KEY = 'algotrader_game_plan_ahead';
 
 /** Heads-up bracket: how many stats, within how many points (per market family), before it shows. */
-export interface AheadSettings { minCount: number; reachES: number; reachNQ: number }
-const AHEAD_DEFAULT: AheadSettings = { minCount: 4, reachES: 12, reachNQ: 50 };
+export interface AheadSettings { minCount: number; reachES: number; reachNQ: number; runMin: number; ladder: boolean }
+/** runMin: stats in a row before the run box shows; ladder: the "next stat in X pts" readout by price. */
+const AHEAD_DEFAULT: AheadSettings = { minCount: 4, reachES: 12, reachNQ: 50, runMin: 4, ladder: true };
 const REFRESH_MS = 30_000;
 
 /** The Game Plan panel: shown or hidden (remembered), and the day plan it polls every 30 s. */
@@ -50,7 +51,7 @@ export const useGamePlanStore = defineStore('gamePlan', () => {
   const ahead = ref<AheadSettings>({ ...AHEAD_DEFAULT, ...(getStoredState<Partial<AheadSettings>>(AHEAD_KEY) ?? {}) });
   function setAhead(next: Partial<AheadSettings>): void {
     const merged = { ...ahead.value, ...next };
-    if (!(merged.minCount >= 2) || !(merged.reachES > 0) || !(merged.reachNQ > 0)) return;
+    if (!(merged.minCount >= 2) || !(merged.reachES > 0) || !(merged.reachNQ > 0) || !(merged.runMin >= 2)) return;
     ahead.value = merged;
     setStoredState(AHEAD_KEY, merged);
   }

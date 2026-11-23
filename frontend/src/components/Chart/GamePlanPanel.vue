@@ -82,6 +82,15 @@
           @change="store.setAhead(aheadFamily === 'NQ' ? { reachNQ: Number(($event.target as HTMLInputElement).value) } : { reachES: Number(($event.target as HTMLInputElement).value) })">
         pts ({{ aheadFamily }})
       </p>
+      <p class="gp-ahead" data-testid="game-plan-runs">
+        <span class="gp-label">Runs</span>
+        Box after
+        <input id="gp-run-min" type="number" min="2" max="20" step="1" :value="store.ahead.runMin" aria-label="Stats in a row"
+          @change="store.setAhead({ runMin: Number(($event.target as HTMLInputElement).value) })">
+        stats in a row ·
+        <label><input id="gp-ladder" type="checkbox" :checked="store.ahead.ladder" style="width:auto"
+          @change="store.setAhead({ ladder: ($event.target as HTMLInputElement).checked })"> next-stat distances by price</label>
+      </p>
       <p class="gp-foot">{{ plan.source || "ES 2016-2025" }} stats. Odds, never trade calls. ↻ = a session missed it and it carried over.</p>
     </template>
   </aside>

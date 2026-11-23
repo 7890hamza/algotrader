@@ -228,6 +228,30 @@ export function statRuns(
   return out;
 }
 
+// ---- Stats ladder: how far the next open stats are, above and below price ----
+
+export interface LadderSide { next: number | null; counts: number[] }
+
+/**
+ * For each side of `price`: the distance to the nearest open day-level stat, and how many different
+ * open stats sit within each of `tiers` points. Shows where stats are; it does not say price will go there.
+ */
+export function statsLadder(
+  levels: readonly { group: string; price: number; kind: string; hitAt: number | null; never: boolean; frm: number; until: number }[],
+  t: number, price: number, tiers: readonly number[],
+): { up: LadderSide; down: LadderSide } {
+  const open = [...new Set(levels.filter((l) => l.kind === 'target' && !HOURLY_GROUPS.has(l.group) && !l.never
+    && l.frm <= t && t < l.until && (l.hitAt === null || l.hitAt > t)).map((l) => Math.round(l.price * 100) / 100))];
+  const side = (dists: number[]): LadderSide => ({
+    next: dists.length ? Math.min(...dists) : null,
+    counts: tiers.map((tier) => dists.filter((d) => d <= tier).length),
+  });
+  return {
+    up: side(open.filter((p) => p > price).map((p) => p - price)),
+    down: side(open.filter((p) => p < price).map((p) => price - p)),
+  };
+}
+
 // ---- Heads-up: open stats stacked just ahead of price, before a run starts ----
 
 export interface AheadStack { count: number; far: number; prices: number[] }
