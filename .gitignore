@@ -23,3 +23,7 @@ lab/logs/*
 
 # Memory DOM database (dom-service)
 dom-memory/
+backups/
+logs/
+config/launcher.json
+config/algotrader.ico
