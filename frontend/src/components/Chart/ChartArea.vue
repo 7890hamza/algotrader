@@ -68,6 +68,16 @@
       @update="(patch: { from?: number; to?: number; lines?: string; aPrice?: number; bPrice?: number }) => retraceTool?.updateSelected(patch)"
     />
 
+    <drawing-toolbar
+      :state="drState"
+      @tool="(k: DrawKind | null) => drawTool?.setTool(k)"
+      @style="(patch: { color?: string; dashed?: boolean }) => drawTool?.style(patch)"
+      @remove="drawTool?.removeSelected()"
+      @remove-all="drawTool?.removeAll()"
+      @hide="drawTool?.toggleHidden()"
+      @magnet="drawTool?.toggleMagnet()"
+    />
+
     <mt5-panel v-if="!isSecondPane" />
 
     <aln-guide-overlay :time-zone="chartTimeZone" />
@@ -150,6 +160,9 @@ import ReplayBar from "@/components/Chart/ReplayBar.vue";
 import { useReplayStore } from "@/stores/replayStore";
 import { CmeNapLink } from "@/utils/chart/cmeNapLink";
 import { DailyCandleLink } from "@/utils/chart/dailyCandleLink";
+import DrawingToolbar from "@/components/Chart/DrawingToolbar.vue";
+import { DrawingController } from "@/utils/chart/drawingController";
+import type { DrawKind, Drawing } from "@/utils/chart/drawings";
 import { barAtOrBefore, IS_REPLAY, REPLAY_FETCH_LIMIT, replayEndMs } from "@/utils/replay";
 import { ReplayCurtainPrimitive } from "@/utils/chart/replayCurtainPrimitive";
 import AmTbrGuideOverlay from "@/components/Chart/AmTbrGuideOverlay.vue";
@@ -234,6 +247,8 @@ interface ChartAreaData {
   cmeNapLink: CmeNapLink | null;
   dailyCandleLink: DailyCandleLink | null;
   rtSelected: RetraceDrawing | null;
+  drawTool: DrawingController | null;
+  drState: { tool: DrawKind | null; selected: Drawing | null; count: number; hidden: boolean; magnet: boolean };
 }
 
 function isOhlcLegendPoint(value: unknown): value is OhlcLegendPoint {
@@ -257,6 +272,7 @@ export default defineComponent({
     CloseCircleOutline,
     PositionToolCard,
     RetraceToolCard,
+    DrawingToolbar,
     Mt5Panel,
     Indicator,
     NButton,
@@ -315,6 +331,8 @@ export default defineComponent({
       cmeNapLink: null,
       dailyCandleLink: null,
       rtSelected: null,
+      drawTool: null,
+      drState: { tool: null, selected: null, count: 0, hidden: false, magnet: true },
     };
   },
 
@@ -459,6 +477,24 @@ export default defineComponent({
       onPlaced: () => this.$emit("placed"),
     }));
     this.retraceTool.setSymbol(this.currentMarketStore.symbol);
+    this.drawTool = markRaw(new DrawingController({
+      getSeries: () => this.ohlcSeriesRef,
+      coordinateToPrice: (y) => this.chartInfrastructure.coordinateToCandlestickPrice(y),
+      coordinateToLogical: (x) => this.chartInfrastructure.coordinateToLogical(x),
+      bars: () => {
+        const data = IS_REPLAY ? this.candlesticksStore.data.filter((c) => c.timestamp_ms <= useReplayStore().cursorMs) : this.candlesticksStore.data;
+        return data.map((c) => ({ t: c.timestamp_ms, o: Number(c.open), h: Number(c.high), l: Number(c.low), c: Number(c.close) }));
+      },
+      barMs: () => (TIMEFRAME_TO_MINUTES[this.currentChartSessionKey().timeframe as TimeframeCode] ?? 1) * 60_000,
+      setDragScroll: (enabled) => {
+        this.chartInfrastructure.setMouseDragScrollEnabled(enabled && this.interactionMode !== 'measure');
+      },
+      busy: () => this.interactionMode !== 'pan',
+      onChange: (state) => {
+        this.drState = { ...state, selected: state.selected ? { ...state.selected } : null };
+      },
+    }));
+    this.drawTool.setSymbol(this.currentMarketStore.symbol);
     if (!IS_SECOND_PANE) {
       this.cmeNapLink = markRaw(new CmeNapLink({
         manager: () => this.chartInfrastructure.chartManager,
@@ -523,6 +559,7 @@ export default defineComponent({
     this.setMeasurementPaneElement(null);
     this.positionTool?.destroy();
     this.retraceTool?.destroy();
+    this.drawTool?.destroy();
     this.gamePlanLink?.destroy();
     this.cmeNapLink?.destroy();
     this.dailyCandleLink?.destroy();
@@ -699,6 +736,7 @@ export default defineComponent({
       const symbol = this.currentMarketStore.symbol;
       this.positionTool?.setMarket(symbol, this.currentMarketMinMove);
       this.retraceTool?.setSymbol(symbol);
+      this.drawTool?.setSymbol(symbol);
       if (symbol) {
         void fetchBrokerSymbolSpec(symbol).then((spec) => this.positionTool?.setBrokerSpec(symbol, spec));
       }
@@ -709,6 +747,7 @@ export default defineComponent({
       const mode = this.interactionMode;
       this.positionTool?.setPlacing(mode === 'long' || mode === 'short' ? mode : null);
       this.retraceTool?.setPlacing(mode === 'retrace');
+      if (mode !== 'pan') this.drawTool?.setTool(null);
 
       if (this.interactionMode !== 'measure') {
         this.cancelMeasurementOverlay();
@@ -857,6 +896,8 @@ export default defineComponent({
       this.positionTool?.syncSeries();
       this.retraceTool?.setPane(paneHtmlElement);
       this.retraceTool?.syncSeries();
+      this.drawTool?.setPane(paneHtmlElement);
+      this.drawTool?.syncSeries();
       this.gamePlanLink?.syncSeries();
       this.dailyCandleLink?.syncSeries();
       this.backtestOverlayTarget = paneHtmlElement
@@ -952,6 +993,7 @@ export default defineComponent({
 
       this.ohlcSeriesRef = this.addCandlestickData(data, this.seriesOptions);
       this.cmeNapLink?.refresh(false);
+      this.drawTool?.refresh();
       void this.syncBacktestOverlayTarget();
       this.refreshBacktestMarkers();
 
