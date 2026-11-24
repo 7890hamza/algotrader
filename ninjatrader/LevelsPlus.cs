@@ -9,11 +9,18 @@
 //                       Current Day OHL already draws the open.
 //   3. ALN session band - session open +/- 0.5 to 1 SDEV (last 20 sessions), only while the session
 //                       runs: Asia 8 PM-2 AM, London 2-8 AM, AM 8 AM-12 PM, PM 12-4 PM (New York time).
-//   4. TBR bands      - two bands per session: open + 0.25 SDEV out to the usual overshoot (the
-//                       stretch median, about 0.41) and the same below. SDEV here is the sample one
-//                       (like the ALN TBR code). First touch gets a "TBR hit 5:30 AM" tag.
-//   5. Labels         - each band's name written inside it at the right edge, and a tag (top right)
-//                       saying which Day / Week VWAP band price is in right now.
+//   4. TBR            - dotted lines exactly at open +0.25 and -0.25 SDEV (sample SDEV, last 20
+//                       sessions - the same math as AlgoTrader's AM TBR), each with a light band
+//                       out to the usual overshoot (stretch median, about 0.41). First touch gets a
+//                       small "TBR 5:30 AM" tag.
+//   5. Labels         - a right-edge column next to the last candle (like the app's small "+1.5"
+//                       labels): every Day / Week SDEV level, the TBR lines with their prices and the
+//                       band names. Labels never overlap, and the level(s) the current candle is
+//                       touching turn white and bold with a marker, so you see which SDEV price is on.
+//                       Plus a tiny "-1.5" mark where price first touches each Day SDEV level today,
+//                       and a tag (top right) saying which band price is in.
+//   History: by default only today's bands and marks are kept ("Days of history"), so the chart
+//            stays clean. Old ones are removed as each new day starts.
 //
 // The session math runs on a 1-minute series this indicator loads itself, so the levels are the
 // same on any chart timeframe. Load at least 30 days of data so 20 full days / sessions exist.
@@ -59,12 +66,18 @@ namespace NinjaTrader.NinjaScript.Indicators
         }
 
         private Session day;
+        private class LevelLabel { public double Price, Lo, Hi; public string Text; public Brush Brush; public bool Band; }
+        private readonly Dictionary<DateTime, List<string>> tagsByDay = new Dictionary<DateTime, List<string>>();
+        private readonly List<DateTime> dayOrder = new List<DateTime>();
+        private readonly HashSet<string> touched = new HashSet<string>();
+        private static readonly double[] SdSteps = { 3, 2.5, 2, 1.5, 1, 0.5, -0.5, -1, -1.5, -2, -2.5, -3 };
+        private SimpleFont markFont;
         private readonly List<Session> aln = new List<Session>();
         private TimeZoneInfo chartTz, nyTz;
         private LizardIndicators.amaCurrentDayVWAP dayVwap;
         private LizardIndicators.amaCurrentWeekVWAP weekVwap;
         private SimpleFont labelFont, tagFont;
-        private Brush dayLabelBrush, weekLabelBrush, tagBackBrush;
+        private Brush dayLabelBrush, weekLabelBrush, tagBackBrush, midLabelBrush, vwapLabelBrush, highlightBrush;
 
         protected override void OnStateChange()
         {
@@ -99,6 +112,10 @@ namespace NinjaTrader.NinjaScript.Indicators
                 ShowTbr = true;
                 ShowLabels = true;
                 ShowPriceTag = true;
+                ShowWeekLabels = true;
+                ShowTouchMarks = true;
+                MaxLabels = 16;
+                HistoryDays = 1;
                 Lookback = 20;
 
                 MtfBrush = MakeBrush(60, 207, 154);
@@ -136,9 +153,13 @@ namespace NinjaTrader.NinjaScript.Indicators
                 nyTz = TimeZoneInfo.FindSystemTimeZoneById("Eastern Standard Time");
                 labelFont = new SimpleFont("Arial", 10) { Bold = true };
                 tagFont = new SimpleFont("Arial", 11) { Bold = true };
+                markFont = new SimpleFont("Arial", 8) { Bold = true };
                 dayLabelBrush = MakeBrush(195, 155, 255);
                 weekLabelBrush = MakeBrush(184, 194, 204);
                 tagBackBrush = MakeBrush(43, 45, 49);
+                midLabelBrush = MakeBrush(143, 162, 255);
+                vwapLabelBrush = MakeBrush(241, 199, 91);
+                highlightBrush = Brushes.White;
 
                 day = new Session { Name = "MTF D", StartMin = 18 * 60, Length = 23 * 60 };
                 aln.Clear();
@@ -177,18 +198,24 @@ namespace NinjaTrader.NinjaScript.Indicators
                 Draw.TextFixed(this, "LP_now", text, TextPosition.TopRight, Brushes.White, tagFont, Brushes.Transparent, tagBackBrush, 70);
             }
 
-            if (!IsFirstTickOfBar) return;   // labels move once per bar
-            if (ShowLabels && dayOk)
+            // first touch of each Day SDEV level today: a tiny "-1.5" mark on that candle
+            if (ShowTouchMarks && IsFirstTickOfBar && CurrentBar > 1 && day != null && day.Key != DateTime.MinValue
+                && dayVwap.UpperBand1.IsValidDataPoint(1) && dayVwap.SessionVWAP.IsValidDataPoint(1))
             {
-                Label("LP_dU", "D VWAP +2-3 SD", (dayVwap.UpperBand2[0] + dayVwap.UpperBand3[0]) / 2, Time[0], dayLabelBrush);
-                Label("LP_dL", "D VWAP -2-3 SD", (dayVwap.LowerBand2[0] + dayVwap.LowerBand3[0]) / 2, Time[0], dayLabelBrush);
-            }
-            if (ShowLabels && weekOk)
-            {
-                Label("LP_wU", "W VWAP +2-3 SD", (weekVwap.UpperBand2[0] + weekVwap.UpperBand3[0]) / 2, Time[0], weekLabelBrush);
-                Label("LP_wL", "W VWAP -2-3 SD", (weekVwap.LowerBand2[0] + weekVwap.LowerBand3[0]) / 2, Time[0], weekLabelBrush);
+                double vw = dayVwap.SessionVWAP[1], unit = (dayVwap.UpperBand1[1] - vw) / Sd1;
+                if (unit > 0)
+                    foreach (double k in SdSteps)
+                    {
+                        double lvl = vw + k * unit;
+                        string key = day.Key.ToString("yyyyMMdd") + "_" + k.ToString("0.0");
+                        if (Low[1] <= lvl && High[1] >= lvl && touched.Add(key))
+                            Track("LP_touch_" + key, Draw.Text(this, "LP_touch_" + key, false, SdText(k), Time[1], lvl, k > 0 ? 9 : -9,
+                                Math.Abs(k) % 1 == 0 ? dayLabelBrush : midLabelBrush, markFont, TextAlignment.Center, Brushes.Transparent, Brushes.Transparent, 0) != null);
+                    }
             }
         }
+
+        private static string SdText(double k) { return (k > 0 ? "+" : "-") + Math.Abs(k).ToString("0.#"); }
 
         private void SetMids(int first, double vwap, double u1, double u2, double u3, double l1, double l2, double l3)
         {
@@ -242,6 +269,7 @@ namespace NinjaTrader.NinjaScript.Indicators
                 if (s.Active) Finish(s);
                 s.Active = true;
                 s.Key = key;
+                if (isDay) NewDay(key);
                 s.Start = barStart;
                 s.Open = o;
                 s.Count = 0;
@@ -256,7 +284,6 @@ namespace NinjaTrader.NinjaScript.Indicators
 
             if (!double.IsNaN(s.SdPop))
             {
-                if (ShowLabels) DrawLabels(s, isDay, barEnd);
                 if (!isDay && ShowTbr && !s.TbrHit)
                 {
                     double pts = s.Open * s.SdSample / 100;
@@ -265,8 +292,10 @@ namespace NinjaTrader.NinjaScript.Indicators
                     {
                         s.TbrHit = true;
                         bool upSide = h >= up && (l > dn || Math.Abs(o - up) <= Math.Abs(o - dn));
-                        Draw.Text(this, "LP_tbrhit_" + s.Name + Stamp(s), false, "TBR hit " + barStart.ToString("h:mm tt"),
-                            barStart, upSide ? up : dn, upSide ? 12 : -12, TbrBrush, tagFont, TextAlignment.Left, Brushes.Transparent, Brushes.Transparent, 0);
+                        string tag = "LP_tbrhit_" + s.Name + Stamp(s);
+                        Draw.Text(this, tag, false, (upSide ? "TBR " : "TBR ") + barStart.ToString("h:mm tt"),
+                            barStart, upSide ? up : dn, upSide ? 10 : -10, TbrBrush, markFont, TextAlignment.Center, Brushes.Transparent, Brushes.Transparent, 0);
+                        Track(tag, true);
                     }
                 }
             }
@@ -315,30 +344,11 @@ namespace NinjaTrader.NinjaScript.Indicators
                     double tp = s.Open * s.SdSample / 100;
                     Band(id + "_tbrU", s.Start, end, s.Open + 0.25 * tp, s.Open + s.StretchMedian * tp, TbrBrush, TbrOpacity);
                     Band(id + "_tbrD", s.Start, end, s.Open - s.StretchMedian * tp, s.Open - 0.25 * tp, TbrBrush, TbrOpacity);
-                }
-            }
-        }
-
-        // Names written inside the bands, kept at the newest bar so they sit next to price.
-        private void DrawLabels(Session s, bool isDay, DateTime at)
-        {
-            double pts = s.Open * s.SdPop / 100;
-            string id = "LP_lbl_" + s.Name;   // one label per kind: it moves along with the bars
-            if (isDay && ShowMtf)
-            {
-                Label(id + "_up", "MTF D +1 to +1.5", s.Open + 1.25 * pts, at, MtfBrush);
-                Label(id + "_dn", "MTF D -1 to -1.5", s.Open - 1.25 * pts, at, MtfBrush);
-            }
-            if (!isDay)
-            {
-                Label(id + "_up", "ALN " + s.Name + " +0.5 to +1", s.Open + 0.75 * pts, at, AlnBrush);
-                Label(id + "_dn", "ALN " + s.Name + " -0.5 to -1", s.Open - 0.75 * pts, at, AlnBrush);
-                if (ShowTbr)
-                {
-                    double tp = s.Open * s.SdSample / 100;
-                    double mid = (0.25 + s.StretchMedian) / 2;
-                    Label(id + "_tbrU", "TBR " + s.Name + " +0.25", s.Open + mid * tp, at, TbrBrush);
-                    Label(id + "_tbrD", "TBR " + s.Name + " -0.25", s.Open - mid * tp, at, TbrBrush);
+                    // the TBR lines themselves, exactly at +0.25 / -0.25 (same as AlgoTrader's AM TBR)
+                    Draw.Line(this, id + "_tbrLU", false, s.Start, s.Open + 0.25 * tp, end, s.Open + 0.25 * tp, TbrBrush, DashStyleHelper.Dot, 1);
+                    Draw.Line(this, id + "_tbrLD", false, s.Start, s.Open - 0.25 * tp, end, s.Open - 0.25 * tp, TbrBrush, DashStyleHelper.Dot, 1);
+                    Track(id + "_tbrLU", true);
+                    Track(id + "_tbrLD", true);
                 }
             }
         }
@@ -346,11 +356,121 @@ namespace NinjaTrader.NinjaScript.Indicators
         private void Band(string tag, DateTime start, DateTime end, double lo, double hi, Brush brush, int opacity)
         {
             Draw.Rectangle(this, tag, false, start, hi, end, lo, Brushes.Transparent, brush, opacity);
+            Track(tag, true);
         }
 
-        private void Label(string tag, string text, double y, DateTime at, Brush brush)
+        // ---- history: keep only the last N days of drawings -------------------------------------------
+        private void Track(string tag, bool drawn)
         {
-            Draw.Text(this, tag, false, text, at, y, 0, brush, labelFont, TextAlignment.Right, Brushes.Transparent, Brushes.Transparent, 0);
+            if (!drawn || day == null || day.Key == DateTime.MinValue) return;
+            List<string> list;
+            if (!tagsByDay.TryGetValue(day.Key, out list)) { list = new List<string>(); tagsByDay[day.Key] = list; }
+            list.Add(tag);
+        }
+
+        private void NewDay(DateTime key)
+        {
+            if (!tagsByDay.ContainsKey(key)) { tagsByDay[key] = new List<string>(); dayOrder.Add(key); }
+            if (HistoryDays <= 0) return;
+            while (dayOrder.Count > HistoryDays)
+            {
+                DateTime old = dayOrder[0];
+                dayOrder.RemoveAt(0);
+                foreach (string tag in tagsByDay[old]) RemoveDrawObject(tag);
+                tagsByDay.Remove(old);
+            }
+        }
+
+        // ---- 5. the label column next to the last candle ------------------------------------------
+        protected override void OnRender(NinjaTrader.Gui.Chart.ChartControl chartControl, NinjaTrader.Gui.Chart.ChartScale chartScale)
+        {
+            base.OnRender(chartControl, chartScale);
+            if (!ShowLabels || ChartBars == null || dayVwap == null || Bars == null || Bars.Count == 0) return;
+            int idx = Math.Min(ChartBars.ToIndex, Bars.Count - 1);
+            if (idx < 0) return;
+            double barHi = Bars.GetHigh(idx), barLo = Bars.GetLow(idx), last = Bars.GetClose(idx);
+
+            var items = new List<LevelLabel>();
+            AddVwapLevels(items, dayVwap.SessionVWAP, dayVwap.UpperBand1, idx, "D", ShowDayMidbands);
+            if (ShowWeekLabels && weekVwap != null) AddVwapLevels(items, weekVwap.SessionVWAP, weekVwap.UpperBand1, idx, "W", ShowWeekMidbands);
+            bool latest = idx == Bars.Count - 1;   // session labels only next to the newest candle
+            if (latest && day != null && day.Active && ShowMtf && !double.IsNaN(day.SdPop))
+            {
+                double p = day.Open * day.SdPop / 100;
+                items.Add(BandLabel("MTF D +1 to +1.5", day.Open + p, day.Open + 1.5 * p, MtfBrush));
+                items.Add(BandLabel("MTF D -1 to -1.5", day.Open - 1.5 * p, day.Open - p, MtfBrush));
+            }
+            if (latest)
+                foreach (Session s in aln)
+                {
+                    if (!s.Active || double.IsNaN(s.SdPop)) continue;
+                    double p = s.Open * s.SdPop / 100;
+                    items.Add(BandLabel("ALN " + s.Name + " +0.5 to +1", s.Open + 0.5 * p, s.Open + p, AlnBrush));
+                    items.Add(BandLabel("ALN " + s.Name + " -0.5 to -1", s.Open - p, s.Open - 0.5 * p, AlnBrush));
+                    if (ShowTbr)
+                    {
+                        double t = s.Open * s.SdSample / 100;
+                        items.Add(LineLabel("TBR " + s.Name + " +0.25  " + (s.Open + 0.25 * t).ToString("N2"), s.Open + 0.25 * t, TbrBrush));
+                        items.Add(LineLabel(s.Name + " open  " + s.Open.ToString("N2"), s.Open, TbrBrush));
+                        items.Add(LineLabel("TBR " + s.Name + " -0.25  " + (s.Open - 0.25 * t).ToString("N2"), s.Open - 0.25 * t, TbrBrush));
+                    }
+                }
+
+            // only what's on screen, nearest to price first, then top to bottom
+            items.RemoveAll(it => it.Price > chartScale.MaxValue || it.Price < chartScale.MinValue);
+            items.Sort((a, b) => Math.Abs(a.Price - last).CompareTo(Math.Abs(b.Price - last)));
+            if (items.Count > MaxLabels) items.RemoveRange(MaxLabels, items.Count - MaxLabels);
+            items.Sort((a, b) => b.Price.CompareTo(a.Price));
+
+            float x = chartControl.GetXByBarIndex(ChartBars, idx) + 14f;
+            float prevY = float.MinValue;
+            var factory = NinjaTrader.Core.Globals.DirectWriteFactory;
+            using (var normal = new SharpDX.DirectWrite.TextFormat(factory, "Arial", SharpDX.DirectWrite.FontWeight.Normal, SharpDX.DirectWrite.FontStyle.Normal, 10f))
+            using (var bold = new SharpDX.DirectWrite.TextFormat(factory, "Arial", SharpDX.DirectWrite.FontWeight.Bold, SharpDX.DirectWrite.FontStyle.Normal, 10.5f))
+            using (var back = tagBackBrush.ToDxBrush(RenderTarget))
+            {
+                back.Opacity = 0.8f;
+                foreach (LevelLabel it in items)
+                {
+                    bool on = it.Band ? (barLo <= it.Hi && barHi >= it.Lo) : (barLo <= it.Price && barHi >= it.Price);
+                    float y = chartScale.GetYByValue(it.Price);
+                    float ty = Math.Max(y - 6f, prevY + 12f);   // nudge down so labels never overlap
+                    prevY = ty;
+                    string text = (on ? "\u25C0 " : "") + it.Text;
+                    using (var layout = new SharpDX.DirectWrite.TextLayout(factory, text, on ? bold : normal, 400f, 14f))
+                    using (var brush = (on ? highlightBrush : it.Brush).ToDxBrush(RenderTarget))
+                    {
+                        RenderTarget.DrawLine(new SharpDX.Vector2(x - 10f, y), new SharpDX.Vector2(x - 2f, ty + 6f), brush, 1f);
+                        RenderTarget.FillRectangle(new SharpDX.RectangleF(x - 1f, ty - 1f, layout.Metrics.Width + 4f, 13f), back);
+                        RenderTarget.DrawTextLayout(new SharpDX.Vector2(x + 1f, ty - 1f), layout, brush);
+                    }
+                }
+            }
+        }
+
+        private void AddVwapLevels(List<LevelLabel> items, Series<double> vwap, Series<double> upper1, int idx, string who, bool mids)
+        {
+            if (!vwap.IsValidDataPointAt(idx) || !upper1.IsValidDataPointAt(idx)) return;
+            double v = vwap.GetValueAt(idx), unit = (upper1.GetValueAt(idx) - v) / Sd1;
+            if (unit <= 0) return;
+            Brush bandBrush = who == "D" ? dayLabelBrush : weekLabelBrush;
+            items.Add(LineLabel(who + " VWAP", v, who == "D" ? vwapLabelBrush : weekLabelBrush));
+            foreach (double k in SdSteps)
+            {
+                bool isMid = Math.Abs(k) % 1 != 0;
+                if (isMid && !mids) continue;
+                items.Add(LineLabel(who + " " + SdText(k), v + k * unit, isMid ? (who == "D" ? midLabelBrush : weekLabelBrush) : bandBrush));
+            }
+        }
+
+        private static LevelLabel LineLabel(string text, double price, Brush brush)
+        {
+            return new LevelLabel { Text = text, Price = price, Lo = price, Hi = price, Brush = brush };
+        }
+
+        private static LevelLabel BandLabel(string text, double lo, double hi, Brush brush)
+        {
+            return new LevelLabel { Text = text, Price = (lo + hi) / 2, Lo = lo, Hi = hi, Brush = brush, Band = true };
         }
 
         private static Brush MakeBrush(byte r, byte g, byte b)
@@ -424,11 +544,25 @@ namespace NinjaTrader.NinjaScript.Indicators
         [Display(Name = "TBR bands (+0.25 / -0.25)", Order = 8, GroupName = "2. What to show")]
         public bool ShowTbr { get; set; }
 
-        [Display(Name = "Labels inside the bands", Order = 9, GroupName = "2. What to show")]
+        [Display(Name = "Label column next to price", Order = 9, GroupName = "2. What to show")]
         public bool ShowLabels { get; set; }
 
         [Display(Name = "'Price is in' tag (top right)", Order = 10, GroupName = "2. What to show")]
         public bool ShowPriceTag { get; set; }
+
+        [Display(Name = "Week levels in the label column", Order = 12, GroupName = "2. What to show")]
+        public bool ShowWeekLabels { get; set; }
+
+        [Display(Name = "Mark first touch of each Day SDEV", Description = "A tiny +1.5 / -0.5 mark on the candle that first touched that level today", Order = 13, GroupName = "2. What to show")]
+        public bool ShowTouchMarks { get; set; }
+
+        [Range(4, 40)]
+        [Display(Name = "Labels in the column (nearest to price)", Order = 14, GroupName = "2. What to show")]
+        public int MaxLabels { get; set; }
+
+        [Range(0, 30)]
+        [Display(Name = "Days of history (0 = all)", Description = "Bands, TBR lines and marks are kept for this many days; older ones are removed", Order = 15, GroupName = "2. What to show")]
+        public int HistoryDays { get; set; }
 
         [Range(5, 100)]
         [Display(Name = "Lookback (days / sessions)", Description = "How many past days or sessions make 1 SDEV", Order = 11, GroupName = "2. What to show")]
