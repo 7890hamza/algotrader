@@ -26,3 +26,15 @@ wall) as step lines on an NQ / MNQ or ES / MES chart.
    writes `Documents\AlgoTraderLevels\NQ.csv` and `ES.csv`).
 2. Copy `OiWalls.cs` to `Documents\NinjaTrader 8\bin\Custom\Indicators\`, compile with F5.
 3. Add **OiWalls** to the chart. It re-reads the file every 20 seconds while live.
+
+# LevelsPlus (midbands + MTF / ALN / TBR bands)
+
+`LevelsPlus.cs` sits on top of the ama Day / Week VWAP (LizardIndicators) and Current Day OHL
+without changing them: VWAP midbands (+/-0.5, 1.5, 2.5 SD) read from the ama indicators, MTF
+daily band (+/-1 to 1.5 SDEV), ALN session bands (+/-0.5 to 1), TBR bands (+0.25 and -0.25 out to
+the stretch median), labels inside the bands and a "price is in" tag. Session math runs on its
+own 1-minute series, so it matches on any chart timeframe.
+
+1. Back up: Tools > Export > NinjaScript Add-On.
+2. Copy `LevelsPlus.cs` to `Documents\NinjaTrader 8\bin\Custom\Indicators\`, compile with F5.
+3. Add **LevelsPlus** to the ES chart. Load 30+ days so 20 full days / sessions exist.
