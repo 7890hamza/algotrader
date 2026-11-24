@@ -59,6 +59,10 @@
       :aria-pressed="gexStore.visible"
       @click="gexStore.toggle()"
     >GEX</n-button>
+    <span v-if="gexStore.visible" class="dc-who" data-testid="gex-mode">
+      <button type="button" :class="['dc-who__btn', 'dc-who__btn--both', { 'dc-who__btn--on': gexStore.mode === 'walls' }]" title="STS option walls from QQQ / SPY open interest (oi-walls.bat)" @click="gexStore.setMode('walls')">Walls</button>
+      <button type="button" :class="['dc-who__btn', 'dc-who__btn--both', { 'dc-who__btn--on': gexStore.mode === 'gamma' }]" title="Gamma exposure from SPX / NDX (gex.bat)" @click="gexStore.setMode('gamma')">Gamma</button>
+    </span>
 
     <n-button
       round

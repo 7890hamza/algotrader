@@ -16,3 +16,13 @@ itself if the app restarts.
 Settings (env on `dom-service`): `DOM_MIN_SIZE` (100) and `DOM_FACTOR` (2.5) decide what a
 big order is: at least that many contracts and 2.5x the side's median size.
 `DOM_HOLD_TICKS` (8) is how far price must move away for a level to count as held.
+
+# Option walls (OiWalls)
+
+`OiWalls.cs` draws the STS option walls (outer call wall, call wall, flip, put wall, outer put
+wall) as step lines on an NQ / MNQ or ES / MES chart.
+
+1. Double-click `scripts\windows\oi-walls.bat` and leave it open (refreshes every 5 minutes;
+   writes `Documents\AlgoTraderLevels\NQ.csv` and `ES.csv`).
+2. Copy `OiWalls.cs` to `Documents\NinjaTrader 8\bin\Custom\Indicators\`, compile with F5.
+3. Add **OiWalls** to the chart. It re-reads the file every 20 seconds while live.

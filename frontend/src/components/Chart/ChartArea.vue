@@ -510,6 +510,8 @@ export default defineComponent({
       this.gexLink = markRaw(new GexLink({
         getSeries: () => this.ohlcSeriesRef,
         symbol: () => this.currentMarketStore.symbol,
+        times: () => this.candlesticksStore.data.map((c) => c.timestamp_ms),
+        barMs: () => (TIMEFRAME_TO_MINUTES[this.currentChartSessionKey().timeframe as TimeframeCode] ?? 1) * 60_000,
       }));
       this.dailyCandleLink = markRaw(new DailyCandleLink({
         getSeries: () => this.ohlcSeriesRef,
@@ -1004,6 +1006,7 @@ export default defineComponent({
       this.ohlcSeriesRef = this.addCandlestickData(data, this.seriesOptions);
       this.cmeNapLink?.refresh(false);
       this.drawTool?.refresh();
+      this.gexLink?.redraw();
       void this.syncBacktestOverlayTarget();
       this.refreshBacktestMarkers();
 
