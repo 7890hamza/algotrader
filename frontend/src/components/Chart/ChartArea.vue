@@ -160,6 +160,7 @@ import ReplayBar from "@/components/Chart/ReplayBar.vue";
 import { useReplayStore } from "@/stores/replayStore";
 import { CmeNapLink } from "@/utils/chart/cmeNapLink";
 import { DailyCandleLink } from "@/utils/chart/dailyCandleLink";
+import { GexLink } from "@/utils/chart/gexLink";
 import DrawingToolbar from "@/components/Chart/DrawingToolbar.vue";
 import { DrawingController } from "@/utils/chart/drawingController";
 import type { DrawKind, Drawing } from "@/utils/chart/drawings";
@@ -246,6 +247,7 @@ interface ChartAreaData {
   gamePlanLink: GamePlanChartLink | null;
   cmeNapLink: CmeNapLink | null;
   dailyCandleLink: DailyCandleLink | null;
+  gexLink: GexLink | null;
   rtSelected: RetraceDrawing | null;
   drawTool: DrawingController | null;
   drState: { tool: DrawKind | null; selected: Drawing | null; count: number; hidden: boolean; magnet: boolean };
@@ -330,6 +332,7 @@ export default defineComponent({
       gamePlanLink: null,
       cmeNapLink: null,
       dailyCandleLink: null,
+      gexLink: null,
       rtSelected: null,
       drawTool: null,
       drState: { tool: null, selected: null, count: 0, hidden: false, magnet: true },
@@ -504,6 +507,10 @@ export default defineComponent({
         cursorMs: () => (IS_REPLAY ? useReplayStore().cursorMs : Number.POSITIVE_INFINITY),
         onChange: () => { if (IS_REPLAY) this.replayExtras(); },
       }));
+      this.gexLink = markRaw(new GexLink({
+        getSeries: () => this.ohlcSeriesRef,
+        symbol: () => this.currentMarketStore.symbol,
+      }));
       this.dailyCandleLink = markRaw(new DailyCandleLink({
         getSeries: () => this.ohlcSeriesRef,
         candles: () => this.candlesticksStore.data,
@@ -563,6 +570,7 @@ export default defineComponent({
     this.gamePlanLink?.destroy();
     this.cmeNapLink?.destroy();
     this.dailyCandleLink?.destroy();
+    this.gexLink?.destroy();
     const chartContainer = this.getChartContainer();
     if (chartContainer) {
       chartContainer.removeEventListener("wheel", this.onWheelPassive);
@@ -737,6 +745,7 @@ export default defineComponent({
       this.positionTool?.setMarket(symbol, this.currentMarketMinMove);
       this.retraceTool?.setSymbol(symbol);
       this.drawTool?.setSymbol(symbol);
+      this.gexLink?.refresh();
       if (symbol) {
         void fetchBrokerSymbolSpec(symbol).then((spec) => this.positionTool?.setBrokerSpec(symbol, spec));
       }
@@ -900,6 +909,7 @@ export default defineComponent({
       this.drawTool?.syncSeries();
       this.gamePlanLink?.syncSeries();
       this.dailyCandleLink?.syncSeries();
+      this.gexLink?.syncSeries();
       this.backtestOverlayTarget = paneHtmlElement
         ? getOrCreatePaneOverlayWrapper(paneHtmlElement)
         : null;
@@ -1017,6 +1027,7 @@ export default defineComponent({
         series.attachPrimitive(this.replayCurtain);
         this.gamePlanLink?.reattach();
         this.dailyCandleLink?.reattach();
+        this.gexLink?.reattach();
       }
       this.replayExtras();
       if (scrollToCursor || replay.playing) this.scrollToRealTime();

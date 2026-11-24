@@ -27,3 +27,6 @@ backups/
 logs/
 config/launcher.json
 config/algotrader.ico
+
+# GEX levels written by scripts/gex.py
+frontend/public/gex/

@@ -52,6 +52,16 @@
 
     <n-button
       round
+      class="game-plan-button gex-button"
+      :class="{ 'gex-button--active': gexStore.visible }"
+      data-testid="topbar-gex"
+      title="GEX: where options dealers' hedging pushes price around (call wall, put wall, gamma flip). Run scripts\windows\gex.bat to fetch the levels."
+      :aria-pressed="gexStore.visible"
+      @click="gexStore.toggle()"
+    >GEX</n-button>
+
+    <n-button
+      round
       class="game-plan-button"
       :class="{ 'game-plan-button--active': domStore.visible }"
       data-testid="topbar-memory-dom"
@@ -203,6 +213,7 @@ import { useCurrentMarketStore } from '@/stores/currentMarketStore';
 import { useDomStore } from '@/stores/domStore';
 import { useCmeNapStore } from '@/stores/cmeNapStore';
 import { useDailyCandleStore } from '@/stores/dailyCandleStore';
+import { useGexStore } from '@/stores/gexStore';
 import { useGamePlanStore } from '@/stores/gamePlanStore';
 import { useModalStore } from '@/stores/modalStore';
 import type { ChartLayout } from '@/utils/chartPane';
@@ -244,6 +255,7 @@ const modalStore = useModalStore();
 const gamePlanStore = useGamePlanStore();
 const cmeNapStore = useCmeNapStore();
 const dailyCandleStore = useDailyCandleStore();
+const gexStore = useGexStore();
 const domStore = useDomStore();
 const currentSymbol = computed(() => currentMarketStore.symbol);
 const selectedChartInteractionModeColor = '#7fe7c4';
@@ -289,6 +301,7 @@ function toggleMode(mode: ChartInteractionMode): void {
 .game-plan-button--active { color: #e9c46a; background: rgba(233, 196, 106, 0.15); }
 .cme-nap-button--active { color: #c9a6ff; background: rgba(176, 124, 255, 0.16); }
 .daily-candle-button--active { color: #f0c27a; background: rgba(227, 163, 61, 0.16); }
+.gex-button--active { color: #7fd8a8; background: rgba(47, 182, 124, 0.16); }
 .dc-who { display: inline-flex; align-self: center; gap: 2px; padding: 2px; border-radius: 12px; background: rgba(255, 255, 255, 0.06); }
 .dc-who__btn { border: 0; background: transparent; color: #9aa3b2; font: inherit; font-size: 12px; padding: 3px 10px; border-radius: 10px; cursor: pointer; }
 .dc-who__btn--on.dc-who__btn--austin { color: #e3a33d; background: rgba(227, 163, 61, 0.18); }
