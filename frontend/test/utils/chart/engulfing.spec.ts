@@ -49,3 +49,19 @@ describe('engulfing marks', () => {
     ]);
   });
 });
+
+describe('12-hour lines', () => {
+  it('draws one line per closed 12-hour high / low with HH-LH / HL-LL tags and the bias on the newest', async () => {
+    const { buildTwelveHourLines } = await import('@/utils/chart/engulfing');
+    const pt = (ms: number, hi: number, lo: number, ht: number, lt: number, bias: number) =>
+      ({ timestamp_ms: ms, h12_high: hi, h12_low: lo, h12_hi_tag: ht, h12_lo_tag: lt, bias });
+    const lines = buildTwelveHourLines([
+      pt(0, 110, 100, 1, -1, 0), pt(60_000, 110, 100, 1, -1, 0),
+      pt(120_000, 108, 103, -1, 1, 0), pt(180_000, 108, 103, -1, 1, 0),
+    ] as never);
+    expect(lines.map((l) => l.label)).toEqual([
+      '12H high · HH', '12H high · LH', '12H low · LL', '12H low · HL · no bias',
+    ]);
+    expect(lines[1]).toMatchObject({ startTime: 120, endTime: 180, price: 108 });
+  });
+});

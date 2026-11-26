@@ -109,6 +109,7 @@ import type {
 import { NButton, NIcon } from "naive-ui";
 
 import { useCandlesticksStore } from "@/stores/candlesticksStore";
+import { useGamePlanStore } from "@/stores/gamePlanStore";
 import { useIndicatorsStore } from "@/stores/indicatorsStore";
 import { useCurrentMarketStore } from "@/stores/currentMarketStore";
 import { useCurrentTimeframeStore } from "@/stores/currentTimeframeStore";
@@ -493,6 +494,17 @@ export default defineComponent({
         this.chartInfrastructure.setMouseDragScrollEnabled(enabled && this.interactionMode !== 'measure');
       },
       busy: () => this.interactionMode !== 'pan',
+      levelsNear: (price) => {
+        const nowSec = Date.now() / 1000;
+        const names = new Set<string>();
+        for (const l of this.chartInfrastructure.chartManager?.sessionLevelsExcept?.('') ?? []) {
+          if (Math.abs(l.price - price) <= 1.5 && l.endTime >= nowSec - 86_400) names.add(l.label);
+        }
+        for (const l of useGamePlanStore().plan?.levels ?? []) {
+          if (Math.abs(l.price - price) <= 1.5) names.add(l.label);
+        }
+        return [...names].slice(0, 4);
+      },
       onChange: (state) => {
         this.drState = { ...state, selected: state.selected ? { ...state.selected } : null };
       },

@@ -75,3 +75,56 @@ class EngulfingTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class HigherTimeframeTests(unittest.TestCase):
+    """60-minute engulfings on 1-minute bars, filtered by the 12-hour HL / LH bias."""
+
+    @staticmethod
+    def minute_bars(start_iso: str, hourly):
+        """Expand hourly (o, h, l, c) into 60 one-minute bars each (straight path o -> c, wicks at the ends)."""
+        from datetime import datetime
+
+        t0 = int(datetime.fromisoformat(start_iso).timestamp() * 1000)
+        t, o, h, lo, c = [], [], [], [], []
+        for k, (ho, hh, hl, hc) in enumerate(hourly):
+            path = np.linspace(ho, hc, 61)
+            for m in range(60):
+                t.append(t0 + (k * 60 + m) * 60_000)
+                o.append(path[m]); c.append(path[m + 1])
+                h.append(max(path[m], path[m + 1]) + (hh - max(ho, hc) if m == 30 else 0))
+                lo.append(min(path[m], path[m + 1]) - (min(ho, hc) - hl if m == 31 else 0))
+        return (np.array(t, dtype=np.int64), *(np.array(x, dtype=float) for x in (o, h, lo, c)))
+
+    def test_twelve_hour_tags_bias_and_filter(self) -> None:
+        from indicator_engine.indicators.engulfing import engulfing_htf
+
+        # 6 PM New York start (23:00 UTC in November). 12h #1 range 100-110, #2 higher low 104,
+        # lower high 109? no: #2 high 115 (HH) low 104 (HL) -> bias up for the next 12 hours.
+        night = [(105, 110, 100, 106)] + [(106, 107, 105, 106)] * 11
+        day = [(106, 115, 104, 107)] + [(107, 108, 106, 107)] * 11
+        # next 12h: a green hour engulfing a red one (bullish), then a bearish engulfing
+        nxt = [(108, 108.5, 106.5, 107), (106.8, 110, 106.5, 109.5), (109.6, 109.8, 109, 109.8), (110, 110.2, 106, 106.5)] + [(106.5, 107, 106, 106.6)] * 8
+        t, o, h, lo, c = self.minute_bars("2026-11-09T23:00:00+00:00", night + day + nxt)
+        out = engulfing_htf(t, o, h, lo, c, window=10)
+        third = 24 * 60  # first minute of the third 12-hour candle
+        self.assertEqual(out[third, COL["h12_lo_tag"]], 1)  # HL
+        self.assertEqual(out[third, COL["h12_hi_tag"]], 1)  # HH
+        self.assertEqual(out[third, COL["bias"]], 1)
+        self.assertTrue(np.isnan(out[third - 1, COL["bias"]]) or out[third - 1, COL["bias"]] != 1)  # not before it closes
+        sig_rows = np.flatnonzero(~np.isnan(out[:, COL["signal"]]))
+        self.assertEqual(len(sig_rows), 1)
+        self.assertEqual(out[sig_rows[0], COL["signal"]], 1)  # the bullish one, with the bias
+        self.assertEqual(sig_rows[0], third + 2 * 60 - 1)  # on the last minute of that hour
+        against = np.flatnonzero(~np.isnan(out[:, COL["against"]]))
+        self.assertEqual(out[against[-1], COL["against"]], -1)  # the bearish one is hidden
+
+    def test_chart_timeframe_mode_matches_old_behaviour(self) -> None:
+        from indicator_engine.indicators.engulfing import engulfing_htf
+
+        bars = [(100, 104.5, 99.5, 104), (105, 106, 98, 99), (99, 99.5, 95, 95.5)]
+        o, h, lo, c = (np.array(x, dtype=float) for x in zip(*bars))
+        t = np.arange(3, dtype=np.int64) * 60_000
+        old = engulfing(t, o, h, lo, c, window=10)
+        new = engulfing_htf(t, o, h, lo, c, window=10, tf_minutes=0, bias="none")
+        np.testing.assert_array_equal(np.isnan(old[:, :12]), np.isnan(new[:, :12]))

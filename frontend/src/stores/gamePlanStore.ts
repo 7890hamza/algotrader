@@ -41,11 +41,13 @@ const AHEAD_KEY = 'algotrader_game_plan_ahead';
 /** Heads-up bracket: how many stats, within how many points (per market family), before it shows. */
 export interface AheadSettings {
   minCount: number; reachES: number; reachNQ: number; runMin: number; ladder: boolean;
+  /** the "N stats in a row" boxes and their ruler (off by default) */
+  runs: boolean;
   /** run fade: on/off, stats in the run, give-back to enter (0-1), share of the way back to aim for (0-1) */
   fade: boolean; fadeMin: number; fadeTrigger: number; fadeTarget: number;
 }
 /** runMin: stats in a row before the run box shows; ladder: the "next stat in X pts" readout by price. */
-const AHEAD_DEFAULT: AheadSettings = { minCount: 4, reachES: 12, reachNQ: 50, runMin: 4, ladder: true,
+const AHEAD_DEFAULT: AheadSettings = { minCount: 4, reachES: 12, reachNQ: 50, runMin: 4, ladder: true, runs: false,
   fade: true, fadeMin: 8, fadeTrigger: 0.25, fadeTarget: 0.5 };
 const REFRESH_MS = 30_000;
 

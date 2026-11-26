@@ -4,7 +4,7 @@
  * kept per symbol.
  */
 
-export type DrawKind = 'trend' | 'ray' | 'hline' | 'hray' | 'vline' | 'rect' | 'text';
+export type DrawKind = 'trend' | 'ray' | 'hline' | 'hray' | 'vline' | 'rect' | 'text' | 'bookmark';
 export interface DPoint { t: number; p: number }
 export interface Drawing {
   id: string;
@@ -27,9 +27,39 @@ export const TOOLS: readonly { kind: DrawKind; label: string; key: string }[] = 
   { kind: 'vline', label: 'Vertical line', key: 'Alt+V' },
   { kind: 'rect', label: 'Rectangle', key: 'Alt+R' },
   { kind: 'text', label: 'Text note', key: '' },
+  { kind: 'bookmark', label: 'Price bookmark: drag the magnifier up / down to look at a price (Alt+B)', key: 'Alt+B' },
 ];
 
 export const newId = (): string => Math.random().toString(36).slice(2, 10);
+export const BOOKMARK_COLOR = '#ffcc4d';
+
+/** Dollars per point for the symbols we trade (null = unknown). */
+export function pointValue(symbol: string | null): { label: string; usd: number }[] {
+  const s = (symbol ?? '').toUpperCase();
+  if (s.startsWith('MES')) return [{ label: 'MES', usd: 5 }];
+  if (s.startsWith('MNQ')) return [{ label: 'MNQ', usd: 2 }];
+  if (s.startsWith('ES')) return [{ label: 'ES', usd: 50 }, { label: 'MES', usd: 5 }];
+  if (s.startsWith('NQ')) return [{ label: 'NQ', usd: 20 }, { label: 'MNQ', usd: 2 }];
+  return [];
+}
+
+/** Touches of a level since `fromT` (one per visit), the last one, and how far price has moved away since. */
+export function touchInfo(bars: readonly { t: number; h: number; l: number }[], price: number, fromT: number):
+  { count: number; lastT: number | null; awayPts: number | null } {
+  let count = 0; let inside = false; let lastT: number | null = null; let lastIdx = -1;
+  bars.forEach((b, i) => {
+    if (b.t < fromT) return;
+    const hit = b.l <= price && b.h >= price;
+    if (hit && !inside) count += 1;
+    if (hit) { lastT = b.t; lastIdx = i; }
+    inside = hit;
+  });
+  if (lastIdx < 0 || lastIdx >= bars.length - 1) return { count, lastT, awayPts: lastIdx < 0 ? null : 0 };
+  const after = bars.slice(lastIdx + 1);
+  const above = bars[bars.length - 1].l > price;
+  const away = above ? Math.max(...after.map((b) => b.h)) - price : price - Math.min(...after.map((b) => b.l));
+  return { count, lastT, awayPts: Math.max(0, away) };
+}
 
 /** Fractional bar position of a time: between loaded bars by position, outside them by bar width. */
 export function timeToLogical(times: readonly number[], barMs: number, t: number): number {

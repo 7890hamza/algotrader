@@ -230,7 +230,7 @@ export class GamePlanPrimitive implements ISeriesPrimitive<Time> {
   private params: SeriesAttachedParameter<Time, SeriesType> | null = null;
   private plan: DayPlan | null = null;
   /** heads-up settings (from the Game Plan store) */
-  ahead = { minCount: 4, reachES: 12, reachNQ: 50, runMin: 4, ladder: true, fade: true, fadeMin: 8, fadeTrigger: 0.25, fadeTarget: 0.5 };
+  ahead = { minCount: 4, reachES: 12, reachNQ: 50, runMin: 4, ladder: true, runs: false, fade: true, fadeMin: 8, fadeTrigger: 0.25, fadeTarget: 0.5 };
   /** the chart's candles, for the run fade */
   bars: readonly { timestamp_ms: number; high: number | string; low: number | string; close: number | string }[] = [];
   private t = 0;
@@ -306,7 +306,7 @@ export class GamePlanPrimitive implements ISeriesPrimitive<Time> {
     }
     // "I" from price back to where the latest run started
     const rulers: Ruler[] = [];
-    const last = statRuns(plan.levels, this.t, this.ahead.runMin).pop();
+    const last = this.ahead.runs ? statRuns(plan.levels, this.t, this.ahead.runMin).pop() : undefined;
     if (last && nowX !== null && yNow !== null && this.price) {
       // from price to the far end of the run (its low for a run down, its high for a run up)
       const end = last.dir > 0 ? last.hi : last.lo;
@@ -351,7 +351,8 @@ export class GamePlanPrimitive implements ISeriesPrimitive<Time> {
     }
     const runs: RunBox[] = [];
     const boxRulers: Ruler[] = [];
-    for (const r of statRuns(plan.levels, this.t, this.ahead.runMin) as StatRun[]) {
+    const shownRuns = this.ahead.runs ? statRuns(plan.levels, this.t, this.ahead.runMin) : [];
+    for (const r of shownRuns as StatRun[]) {
       const x0 = this.x(r.from); const x1 = this.x(r.to);
       const y0 = series.priceToCoordinate(r.lo); const y1 = series.priceToCoordinate(r.hi);
       if (x0 === null || x1 === null || y0 === null || y1 === null) continue;
@@ -359,7 +360,7 @@ export class GamePlanPrimitive implements ISeriesPrimitive<Time> {
       boxRulers.push({ x: Math.max(x0, x1) + 12, ya: Number(y0), yb: Number(y1), text: `${fmtPts(r.hi - r.lo)} pts` });
     }
     // Every checkmark inside a run, not only the latest few, so the stack reads as one.
-    for (const r of statRuns(plan.levels, this.t, this.ahead.runMin)) {
+    for (const r of shownRuns) {
       for (const l of plan.levels) {
         if (l.hitAt === null || l.hitAt < r.from || l.hitAt > r.to || l.kind !== 'target' || lines.some((x) => x.hitX !== null && x.y === series.priceToCoordinate(l.price))) continue;
         const y = series.priceToCoordinate(l.price); const hx = this.x(l.hitAt);

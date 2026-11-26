@@ -39,3 +39,20 @@ describe('drawings helpers', () => {
     expect(magnet(101, bar, 0.5)).toBe(101);
   });
 });
+
+describe('price bookmark helpers', () => {
+  it('counts visits since the day start and how far price moved away after the last one', async () => {
+    const { touchInfo, pointValue } = await import('@/utils/chart/drawings');
+    const bars = [
+      { t: 0, h: 101, l: 99 },   // before the day: ignored
+      { t: 10, h: 100.5, l: 98 }, { t: 11, h: 101, l: 99.5 },  // one visit
+      { t: 12, h: 103, l: 100.5 },
+      { t: 13, h: 104, l: 99.75 }, // second visit
+      { t: 14, h: 108, l: 101 }, { t: 15, h: 106, l: 103 },
+    ];
+    expect(touchInfo(bars, 100, 5)).toEqual({ count: 2, lastT: 13, awayPts: 8 });
+    expect(touchInfo(bars, 200, 5)).toEqual({ count: 0, lastT: null, awayPts: null });
+    expect(pointValue('ES')).toEqual([{ label: 'ES', usd: 50 }, { label: 'MES', usd: 5 }]);
+    expect(pointValue('MNQ')).toEqual([{ label: 'MNQ', usd: 2 }]);
+  });
+});

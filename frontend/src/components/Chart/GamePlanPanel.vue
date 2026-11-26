@@ -84,7 +84,9 @@
       </p>
       <p class="gp-ahead" data-testid="game-plan-runs">
         <span class="gp-label">Runs</span>
-        Box after
+        <label><input id="gp-runs" type="checkbox" :checked="store.ahead.runs" style="width:auto"
+          @change="store.setAhead({ runs: ($event.target as HTMLInputElement).checked })"> stats-in-a-row boxes,</label>
+        after
         <input id="gp-run-min" type="number" min="2" max="20" step="1" :value="store.ahead.runMin" aria-label="Stats in a row"
           @change="store.setAhead({ runMin: Number(($event.target as HTMLInputElement).value) })">
         stats in a row ·

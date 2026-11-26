@@ -165,6 +165,62 @@ export function buildEngulfingLines(points: readonly IndicatorDataPoint[], marks
   return lines;
 }
 
+const H12_HIGH_COLOR = '#EF9A9A';
+const H12_LOW_COLOR = '#80CBC4';
+const tagText = (tag: number | null, high: boolean): string =>
+  tag === null ? '' : high ? (tag > 0 ? 'HH' : tag < 0 ? 'LH' : 'same H') : (tag > 0 ? 'HL' : tag < 0 ? 'LL' : 'same L');
+
+/**
+ * The last closed 12-hour candle's high and low, drawn over the 12 hours after it closed, tagged
+ * HH / LH and HL / LL. The newest pair also says the bias (HL = up, LH = down).
+ */
+export function buildTwelveHourLines(points: readonly IndicatorDataPoint[]): SessionLevelSegment[] {
+  const rows = sorted(points);
+  const out: SessionLevelSegment[] = [];
+  let lastLow: SessionLevelSegment | null = null;
+  let lastBias: number | null = null;
+  for (const high of [true, false]) {
+    const key = high ? 'h12_high' : 'h12_low';
+    const tagKey = high ? 'h12_hi_tag' : 'h12_lo_tag';
+    let run: { start: number; end: number; price: number; tag: number | null } | null = null;
+    const flush = () => {
+      if (!run) return;
+      const seg: SessionLevelSegment = {
+        id: `h12-${high ? 'h' : 'l'}-${run.start}`,
+        startTime: run.start,
+        endTime: run.end,
+        price: run.price,
+        label: `12H ${high ? 'high' : 'low'} · ${tagText(run.tag, high)}`,
+        color: high ? H12_HIGH_COLOR : H12_LOW_COLOR,
+        lineWidth: 1,
+        lineStyle: 2,
+        touch: null,
+        labelColor: high ? H12_HIGH_COLOR : H12_LOW_COLOR,
+        showPrice: false,
+        sessionEndTime: null,
+      };
+      out.push(seg);
+      if (!high) lastLow = seg;
+    };
+    for (const point of rows) {
+      const price = num(point, key);
+      const time = Math.floor(Number(point.timestamp_ms) / 1000);
+      if (price === null) { flush(); run = null; continue; }
+      if (!high) lastBias = num(point, 'bias');
+      if (run && run.price === price) { run.end = time; continue; }
+      flush();
+      run = { start: time, end: time, price, tag: num(point, tagKey) };
+    }
+    flush();
+  }
+  const newest = lastLow as SessionLevelSegment | null;
+  if (newest && lastBias !== null) {
+    newest.label += lastBias > 0 ? ' · bias UP' : lastBias < 0 ? ' · bias DOWN' : ' · no bias';
+    newest.showPrice = true;
+  }
+  return out;
+}
+
 /** Every no-wick candle in the points with when (if ever) price came back to its open. */
 export function buildMaruMarks(points: readonly IndicatorDataPoint[]): MaruMark[] {
   const marks: MaruMark[] = [];

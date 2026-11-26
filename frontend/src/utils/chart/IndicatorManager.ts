@@ -23,6 +23,7 @@ import { layoutHourStats, readHourSlices, readHourStatsGuide } from './hourStats
 import {
   buildEngulfingLines,
   buildEngulfingMarks,
+  buildTwelveHourLines,
   buildMaruMarks,
   type CandleMark,
   isEngulfingGuide,
@@ -313,7 +314,7 @@ export class IndicatorManager {
   private renderEngulfing(id: string, points: readonly IndicatorDataPoint[]): void {
     const levels = this.chartManager.sessionLevelsExcept?.(id) ?? [];
     const marks = buildEngulfingMarks(points, levels, DEFAULT_CHART_TIME_ZONE);
-    const lines = buildEngulfingLines(points, marks);
+    const lines = [...buildEngulfingLines(points, marks), ...buildTwelveHourLines(points)];
     this.chartManager.setSessionLevels?.(id, PRICE_SERIES_KEY, lines, undefined, [], [], marks, buildMaruMarks(points));
   }
 

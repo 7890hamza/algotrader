@@ -102,6 +102,7 @@ const ICONS: Record<DrawKind, string> = {
   hray: 'M6 12h16 M6 12m-1.5 0a1.5 1.5 0 103 0 1.5 1.5 0 10-3 0',
   vline: 'M12 2v20',
   rect: 'M4 6h16v12H4z',
+  bookmark: 'M10 10m-5.5 0a5.5 5.5 0 1011 0 5.5 5.5 0 10-11 0 M14 14l6 6',
   text: 'M5 5h14 M12 5v14 M9 19h6',
 };
 </script>

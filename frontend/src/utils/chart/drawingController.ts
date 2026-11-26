@@ -1,11 +1,12 @@
 import type { CanvasRenderingTarget2D } from 'fancy-canvas';
-import type { IPrimitivePaneRenderer, IPrimitivePaneView, ISeriesPrimitive, Logical, SeriesAttachedParameter, Time } from 'lightweight-charts';
+import type { IPrimitivePaneRenderer, IPrimitivePaneView, ISeriesPrimitive, ISeriesPrimitiveAxisView, Logical, SeriesAttachedParameter, Time } from 'lightweight-charts';
 
+import { cmeClock } from '@/utils/dailyCandle';
 import { getStoredState, setStoredState } from '@/utils/localStorage';
 
 import type { ManagedSeriesApi } from './ChartManager';
 import {
-  COLORS, distToSegment, logicalToTime, magnet, newId, rayEnd, timeToLogical, touches, TWO_POINT,
+  BOOKMARK_COLOR, COLORS, distToSegment, logicalToTime, magnet, newId, pointValue, rayEnd, timeToLogical, touches, touchInfo, TWO_POINT,
   type DPoint, type DrawKind, type Drawing,
 } from './drawings';
 
@@ -35,6 +36,10 @@ class DrawingPrimitive implements ISeriesPrimitive<Time> {
   bars: DrawBar[] = [];
   barMs = 60_000;
   shapes: Shape[] = [];
+  /** bookmark being hovered or dragged: its info card shows */
+  cardId: string | null = null;
+  symbol: string | null = null;
+  levelsNear: (price: number) => string[] = () => [];
 
   attached(p: SeriesAttachedParameter<Time>): void { this.param = p; }
   detached(): void { this.param = null; }
@@ -42,6 +47,17 @@ class DrawingPrimitive implements ISeriesPrimitive<Time> {
   paneViews(): readonly IPrimitivePaneView[] {
     const renderer: IPrimitivePaneRenderer = { draw: (t) => this.draw(t) };
     return [{ zOrder: () => 'top', renderer: () => renderer }];
+  }
+
+  /** Bookmarks get their own yellow price tag on the price axis. */
+  priceAxisViews(): readonly ISeriesPrimitiveAxisView[] {
+    if (this.hidden) return [];
+    return this.drawings.filter((d) => d.kind === 'bookmark').map((d) => ({
+      coordinate: () => this.y(d.a.p) ?? -100,
+      text: () => fmt(d.a.p),
+      textColor: () => '#131722',
+      backColor: () => d.color,
+    }));
   }
 
   x(t: number): number | null {
@@ -54,6 +70,13 @@ class DrawingPrimitive implements ISeriesPrimitive<Time> {
     if (ax === null || ay === null) return null;
     const s: Shape = { d, handles: [{ part: 'a', x: ax, y: ay }], segs: [], box: null };
     if (d.kind === 'hline') { s.segs.push([0, ay, W, ay]); return s; }
+    if (d.kind === 'bookmark') {
+      // the line, and the magnifier near the right edge as its handle
+      s.segs.push([0, ay, W, ay]);
+      s.handles = [{ part: 'a', x: W - 24, y: ay }];
+      s.box = { x0: W - 36, y0: ay - 12, x1: W - 8, y1: ay + 12 };
+      return s;
+    }
     if (d.kind === 'hray') { s.segs.push([ax, ay, W, ay]); return s; }
     if (d.kind === 'vline') { s.segs.push([ax, 0, ax, H]); s.handles[0].y = Math.max(20, Math.min(H - 20, ay)); return s; }
     if (d.kind === 'text') {
@@ -112,6 +135,7 @@ class DrawingPrimitive implements ISeriesPrimitive<Time> {
           ctx.font = TEXT_FONT; ctx.fillStyle = d.color; ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
           ctx.fillText(d.text ?? '', s.box.x0 + 7, (s.box.y0 + s.box.y1) / 2 + 0.5);
         }
+        if (d.kind === 'bookmark') { this.drawMagnifier(ctx, W - 24, s.segs[0][1], d.color); if (this.cardId === d.id) this.drawCard(ctx, W, s.segs[0][1], d); continue; }
         // levels: price and how many times price came back to it
         if (d.kind === 'hline' || d.kind === 'hray') {
           const n = touches(this.bars, d.a.p, d.a.t);
@@ -133,7 +157,47 @@ class DrawingPrimitive implements ISeriesPrimitive<Time> {
       }
     });
   }
+
+  private drawMagnifier(ctx: CanvasRenderingContext2D, x: number, y: number, color: string): void {
+    ctx.fillStyle = '#131722'; ctx.strokeStyle = color; ctx.lineWidth = 2.2;
+    ctx.beginPath(); ctx.arc(x, y, 7, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(x + 5, y + 5); ctx.lineTo(x + 11, y + 11); ctx.stroke();
+  }
+
+  /** What the bookmark is looking at: distance from price, $ per contract, levels there, touches today. */
+  private drawCard(ctx: CanvasRenderingContext2D, W: number, y: number, d: Drawing): void {
+    const p = d.a.p; const last = this.bars[this.bars.length - 1];
+    const lines: CardLine[] = [{ text: fmt(p), color: d.color, bold: true }];
+    if (last) {
+      const dist = p - last.c;
+      const usd = pointValue(this.symbol).map((v) => `$${Math.round(Math.abs(dist) * v.usd).toLocaleString('en-US')} on 1 ${v.label}`).join(' / ');
+      lines.push({ text: `${fmt(Math.abs(dist))} pts ${dist >= 0 ? 'above' : 'below'} price${usd ? ` · ${usd}` : ''}`, color: '#e6e9ef' });
+      const dayStart = last.t - cmeClock(last.t).dm * 60_000;
+      const ti = touchInfo(this.bars, p, dayStart);
+      const when = ti.lastT !== null ? new Date(ti.lastT).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', timeZone: 'America/Los_Angeles' }) : '';
+      lines.push({
+        text: ti.count ? `Touched ${ti.count}× today · last ${when}${ti.awayPts ? `, moved ${fmt(ti.awayPts)} pts away since` : ''}` : 'Not touched today',
+        color: '#b8c0cc',
+      });
+    }
+    const near = this.levelsNear(p);
+    lines.push({ text: near.length ? `Levels here (±1.5 pts): ${near.join(' · ')}` : 'No other levels within 1.5 pts', color: '#b8c0cc' });
+    ctx.font = FONT;
+    const w = Math.max(...lines.map((l) => ctx.measureText(l.text).width)) + 20;
+    const h = lines.length * 17 + 10;
+    const x0 = Math.max(4, W - 44 - w); const y0 = y - h - 12 > 4 ? y - h - 12 : y + 14;
+    ctx.fillStyle = 'rgba(28, 33, 48, 0.96)'; ctx.fillRect(x0, y0, w, h);
+    ctx.strokeStyle = d.color; ctx.lineWidth = 1; ctx.strokeRect(x0 + 0.5, y0 + 0.5, w - 1, h - 1);
+    ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
+    lines.forEach((l, i) => {
+      ctx.font = l.bold ? '700 13px -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif' : FONT;
+      ctx.fillStyle = l.color; ctx.fillText(l.text, x0 + 10, y0 + 14 + i * 17);
+    });
+  }
 }
+
+// ---- bookmark pieces -------------------------------------------------------------------------
+interface CardLine { text: string; color: string; bold?: boolean }
 
 export interface DrawingHost {
   getSeries(): ManagedSeriesApi | null;
@@ -145,6 +209,8 @@ export interface DrawingHost {
   /** another tool (Long / Short / Retrace / measure) owns the mouse right now */
   busy(): boolean;
   onChange(state: { tool: DrawKind | null; selected: Drawing | null; count: number; hidden: boolean; magnet: boolean }): void;
+  /** names of other levels within 1.5 points of a price (for the bookmark card) */
+  levelsNear?(price: number): string[];
 }
 
 interface Stored { drawings: Drawing[]; color: string }
@@ -171,12 +237,14 @@ export class DrawingController {
     const prefs = getStoredState<{ hidden?: boolean; magnet?: boolean }>(PREFS);
     this.prim.hidden = prefs?.hidden ?? false;
     this.magnetOn = prefs?.magnet ?? true;
+    this.prim.levelsNear = (price) => this.host.levelsNear?.(price) ?? [];
     window.addEventListener('keydown', this.onKey);
   }
 
   setSymbol(symbol: string | null): void {
     if (symbol === this.symbol) return;
     this.symbol = symbol;
+    this.prim.symbol = symbol;
     const saved = symbol ? getStoredState<Stored>(key(symbol)) : null;
     this.store = saved && Array.isArray(saved.drawings) ? saved : { drawings: [], color: this.store.color };
     this.prim.selectedId = null;
@@ -290,7 +358,7 @@ export class DrawingController {
     if (e.key === 'Escape') { if (this.tool) this.setTool(null); else if (this.prim.selectedId) { this.prim.selectedId = null; this.render(); } return; }
     if ((e.key === 'Delete' || e.key === 'Backspace') && this.prim.selectedId) { e.preventDefault(); this.removeSelected(); return; }
     if (e.altKey && !e.ctrlKey && !e.metaKey) {
-      const k: Record<string, DrawKind> = { t: 'trend', h: 'hline', j: 'hray', v: 'vline', r: 'rect' };
+      const k: Record<string, DrawKind> = { t: 'trend', h: 'hline', j: 'hray', v: 'vline', r: 'rect', b: 'bookmark' };
       const kind = k[e.key.toLowerCase()];
       if (kind) { e.preventDefault(); this.setTool(kind); }
     }
@@ -309,7 +377,9 @@ export class DrawingController {
       return;
     }
     const hit = this.prim.hit(p.x, p.y);
-    this.pane.style.cursor = hit ? (hit.part === 'body' ? 'move' : 'grab') : '';
+    const book = hit && this.store.drawings.find((x) => x.id === hit.id)?.kind === 'bookmark' ? hit.id : null;
+    this.pane.style.cursor = book ? 'ns-resize' : hit ? (hit.part === 'body' ? 'move' : 'grab') : '';
+    if (book !== this.prim.cardId) { this.prim.cardId = book; this.prim.update(); }
   };
 
   private readonly onDown = (e: PointerEvent): void => {
@@ -328,7 +398,9 @@ export class DrawingController {
         if (!typed) { this.setTool(null); return; }
         text = typed;
       }
-      const d: Drawing = { id: newId(), kind, a: this.first ?? pt, color: this.store.color, ...(this.first ? { b: pt } : {}), ...(text ? { text } : {}) };
+      if (kind === 'bookmark') pt.p = Math.round(pt.p * 4) / 4;   // to the 0.25 tick
+      const color = kind === 'bookmark' ? BOOKMARK_COLOR : this.store.color;
+      const d: Drawing = { id: newId(), kind, a: this.first ?? pt, color, ...(kind === 'bookmark' ? { dashed: true } : {}), ...(this.first ? { b: pt } : {}), ...(text ? { text } : {}) };
       this.store.drawings.push(d);
       this.prim.selectedId = d.id;
       this.setTool(null);
@@ -356,7 +428,13 @@ export class DrawingController {
     const d = this.store.drawings.find((x) => x.id === g.id);
     const p = this.local(e);
     if (!d || !p) return;
-    if (g.part === 'body') {
+    if (d.kind === 'bookmark') {
+      // a bookmark only moves up and down; its card shows while dragging
+      const price = this.host.coordinateToPrice(p.y);
+      if (price === null) return;
+      d.a = { t: g.a.t, p: Math.round(price * 4) / 4 };
+      this.prim.cardId = d.id;
+    } else if (g.part === 'body') {
       const now = this.pointAt(p, false);
       if (!now) return;
       const dt = now.t - g.start.t; const dp = now.p - g.start.p;
@@ -386,6 +464,7 @@ export class DrawingController {
     if (!p || this.tool) return;
     const hit = this.prim.hit(p.x, p.y);
     const d = hit ? this.store.drawings.find((x) => x.id === hit.id) : null;
+    if (d?.kind === 'bookmark') { this.prim.selectedId = d.id; this.prim.cardId = null; this.removeSelected(); return; }
     if (d?.kind !== 'text') return;
     const typed = window.prompt('Note text', d.text ?? '');
     if (typed !== null) { d.text = typed; this.save(); }
