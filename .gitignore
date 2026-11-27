@@ -30,3 +30,6 @@ config/algotrader.ico
 
 # GEX levels written by scripts/gex.py
 frontend/public/gex/
+
+# STS levels saved for backtests (scripts/oi_walls.py)
+data/sts_levels/

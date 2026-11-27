@@ -524,6 +524,7 @@ export default defineComponent({
         symbol: () => this.currentMarketStore.symbol,
         times: () => this.candlesticksStore.data.map((c) => c.timestamp_ms),
         barMs: () => (TIMEFRAME_TO_MINUTES[this.currentChartSessionKey().timeframe as TimeframeCode] ?? 1) * 60_000,
+        bars: () => this.candlesticksStore.data.map((c) => ({ t: c.timestamp_ms, o: c.open, h: c.high, l: c.low, c: c.close, v: c.volume })),
       }));
       this.dailyCandleLink = markRaw(new DailyCandleLink({
         getSeries: () => this.ohlcSeriesRef,

@@ -60,7 +60,7 @@
       @click="gexStore.toggle()"
     >GEX</n-button>
     <span v-if="gexStore.visible" class="dc-who" data-testid="gex-mode">
-      <button type="button" :class="['dc-who__btn', 'dc-who__btn--both', { 'dc-who__btn--on': gexStore.mode === 'walls' }]" title="STS option walls from QQQ / SPY open interest (oi-walls.bat)" @click="gexStore.setMode('walls')">Walls</button>
+      <button type="button" :class="['dc-who__btn', 'dc-who__btn--both', { 'dc-who__btn--on': gexStore.mode === 'walls' }]" title="STS levels: inner / outer call and put walls, hedge flip, daily pin, VWAP and regime, from QQQ / SPY open interest. Refreshed 5:00, 6:30, 8:00 and 10:00 AM PT." @click="gexStore.setMode('walls')">STS</button>
       <button type="button" :class="['dc-who__btn', 'dc-who__btn--both', { 'dc-who__btn--on': gexStore.mode === 'gamma' }]" title="Gamma exposure from SPX / NDX (gex.bat)" @click="gexStore.setMode('gamma')">Gamma</button>
     </span>
 

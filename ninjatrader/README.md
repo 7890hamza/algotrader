@@ -22,7 +22,10 @@ big order is: at least that many contracts and 2.5x the side's median size.
 `OiWalls.cs` draws the STS option walls (outer call wall, call wall, flip, put wall, outer put
 wall) as step lines on an NQ / MNQ or ES / MES chart.
 
-1. Double-click `scripts\windows\oi-walls.bat` and leave it open (refreshes every 5 minutes;
+1. Easiest: run `scripts\windows\install-sts-schedule.ps1` once. Windows then refreshes the levels
+   Monday-Friday at 5:00, 6:30, 8:00 and 10:00 AM PT and saves every refresh to
+   `data\sts_levels\levels_NQ.csv` / `levels_ES.csv` for backtests. Or double-click
+   `scripts\windows\oi-walls.bat` and leave it open (refreshes every 5 minutes;
    writes `Documents\AlgoTraderLevels\NQ.csv` and `ES.csv`).
 2. Copy `OiWalls.cs` to `Documents\NinjaTrader 8\bin\Custom\Indicators\`, compile with F5.
 3. Add **OiWalls** to the chart. It re-reads the file every 20 seconds while live.

@@ -11,3 +11,9 @@ docker cp "timescaledb:/tmp/backup.dump" "$Out\$File"
 docker exec timescaledb rm -f /tmp/backup.dump
 Write-Host "Saved: $Out\$File  ($([math]::Round((Get-Item "$Out\$File").Length / 1MB)) MB)" -ForegroundColor Green
 Write-Host "Copy that file to the other computer and run restore-data.ps1 there."
+# The saved STS levels (for backtests) live in files, not the database: zip them next to the dump.
+if (Test-Path "$Root\data\sts_levels") {
+  $Zip = "$Out\sts-levels-$(Get-Date -Format yyyy-MM-dd).zip"
+  Compress-Archive -Path "$Root\data\sts_levels\*" -DestinationPath $Zip -Force
+  Write-Host "Saved: $Zip (STS levels history)" -ForegroundColor Green
+}
